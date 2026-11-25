@@ -1,11 +1,11 @@
 local IS_APOC = game.GameId == 9098570654; local Players = game:GetService("Players")
 if not game:IsLoaded() then game.Loaded:Wait() end; while not Players.LocalPlayer do task.wait() end; local LocalPlayer = Players.LocalPlayer
 
--- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-25zzzzzzzzzzzzzz.
+-- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-25zzzzzzzzzzzzzzz.
 -- Install: put this file in your executor's autoexec folder or run it in a match. Own menu window: Right Alt hides / shows it. V = Speed, N = Noclip.
 -- Runs only in Survive the Apocalypse. Settings go to the executor's workspace folder. Use at your own risk: it sends the game's own messages (pickup, crates) and the game has an anti-cheat. Vibecoded.
 local NO_LOGS = true  -- true = no log files and no console lines (public copy)
-local VERSION = "aio-2026-11-25zzzzzzzzzzzzzz"  -- bump on every edit so the log shows which copy ran
+local VERSION = "aio-2026-11-25zzzzzzzzzzzzzzz"  -- bump on every edit so the log shows which copy ran
 local GAME_ID, LOG_FILE, APOC_DIR = "", "hbx_log.txt", "SurviveTheApocalypse"
 local logDirOk, logDirErr = pcall(function()
     local ok, id = pcall(function() return game.GameId end); if not ok or not id or id == 0 then id = game.PlaceId end
@@ -2424,6 +2424,75 @@ local function turretStep(now, hp)
         or (nNear > 0 and "turret near: sit in the driver or front passenger seat") or nil
     return shots
 end
+-- Melee Kill Aura (owner 2026-11-25, Remote Spy with the Bat): a swing is <tool>.Swing:FireServer(), then
+-- <tool>.HitTargets:FireServer({targets}); seen with 1-3 zombie models, and with workspace.Structures["Scrap Pile"] /
+-- ["Crashed Car 2"]. Runs only when no gun is in hand. Every structure in reach is a target (owner: the game itself
+-- refuses hits on your own / friendly structures).
+-- shortcut: gap 0.25 s (owner: "make the swing fast"), range = Stats.Range or 12, 3 targets a swing are guesses;
+-- the "melee hit check" log lines tell whether hits do damage.
+local MELEE_GAP, MELEE_MAX = 0.25, 3
+local melee = {next = 0, sent = 0, checks = 0}
+local function meleeInHand()
+    local c = LocalPlayer.Character
+    for _, t in ipairs(c and c:GetChildren() or {}) do
+        if t.ClassName == "Tool" and t:FindFirstChild("HitTargets") and t:FindFirstChild("Swing") then return t end
+    end
+    return nil
+end
+local function meleeStep(tool, now)
+    if now < melee.next then return end
+    local c = LocalPlayer.Character
+    local h = c and c:FindFirstChild("HumanoidRootPart")
+    if not h then return end
+    local hp = h.Position
+    local okRg, rg = pcall(function() return tool.Stats:GetAttribute("Range") end)
+    local range = (okRg and tonumber(rg)) or 12
+    local list = {}
+    for _, f in ipairs(HBX.npcFolders) do
+        local okK, kids = pcall(function() return f.folder:GetChildren() end)
+        for _, m in ipairs(okK and kids or {}) do
+            if m ~= c and m.Name ~= LocalPlayer.Name and not skipSet[string.lower(m.Name)] and not isAlly(m) then
+                local okR, rp = pcall(function()
+                    local r = m:FindFirstChild("HumanoidRootPart") or m:FindFirstChild("Head")
+                    return r and r.Position end)
+                if okR and typeof(rp) == "Vector3" then
+                    local d = (rp - hp).Magnitude
+                    if d <= range and auraTargetOk(m) then list[#list+1] = {m = m, d = d} end
+                end
+            end
+        end
+    end
+    table.sort(list, function(x, y) return x.d < y.d end)
+    local targets = {}
+    for i = 1, math.min(#list, MELEE_MAX) do targets[#targets+1] = list[i].m end
+    if #targets < MELEE_MAX then
+        local st = workspace:FindFirstChild("Structures")
+        local okS, kids = pcall(function() return st and st:GetChildren() or {} end)
+        for _, m in ipairs(okS and kids or {}) do
+            if #targets >= MELEE_MAX then break end
+            local okP, piv = pcall(function() return m:GetPivot().Position end)
+            if okP and typeof(piv) == "Vector3" and (piv - hp).Magnitude <= range + 6 then
+                targets[#targets+1] = m
+            end
+        end
+    end
+    if #targets == 0 then kill.status = "Kill Aura (melee " .. tool.Name .. "): nothing within " .. math.floor(range) .. " studs"; return end
+    melee.next = now + MELEE_GAP
+    local hp0 = hpOf(targets[1])
+    pcall(function() tool.Swing:FireServer() end)
+    local okH, err = pcall(function() tool.HitTargets:FireServer(targets) end)
+    melee.sent = melee.sent + 1
+    if not okH then log("Kill Aura melee: HitTargets failed: " .. tostring(err)) end
+    -- find-out: did the first swings do damage? (remove once known)
+    if melee.checks < 5 and hp0 then
+        melee.checks = melee.checks + 1
+        local t1, n1 = targets[1], targets[1].Name
+        task.delay(0.7, function()
+            log("Kill Aura melee hit check: " .. tool.Name .. " on " .. n1 .. " hp " .. tostring(hp0) .. " > " .. tostring(hpOf(t1)))
+        end)
+    end
+    kill.status = "Kill Aura (melee " .. tool.Name .. "): " .. #targets .. " target(s), " .. melee.sent .. " swings"
+end
 local function killFrame()
     local now = os.clock()
     local c = LocalPlayer.Character
@@ -2431,6 +2500,8 @@ local function killFrame()
     if h then turretStep(now, h.Position) end
     if now >= kill.nextGun then kill.nextGun = now + 0.25; kill.gun = gunInHand() end
     if not kill.gun then
+        local mt = meleeInHand()
+        if mt then return meleeStep(mt, now) end
         kill.status = turret.status and ("Kill Aura: " .. turret.status .. ", no gun in hand")
             or "Kill Aura: ON, waiting for a gun in hand (or a vehicle with a turret)"
         return
@@ -2561,7 +2632,7 @@ local function startApocHelper()
 -- Found in the game's ItemInteractClient / BackpackClient (dump\9098570654). AdjustBackpack with nil = UNSTORE (drops
 -- the bag's contents), so it is only ever called with an item. Log: C:\matcha\workspace\apoc_log.txt.
 -- Notes for Claude: D:\NPCHitBoxExpander\Documentation.md.
-local VERSION = "2026-11-25zzzzzzzzzzzzzz"  -- bump on every edit so the log shows which copy ran
+local VERSION = "2026-11-25zzzzzzzzzzzzzzz"  -- bump on every edit so the log shows which copy ran
 local GAME_ID = 9098570654
 
 local Players     = game:GetService("Players")
@@ -4931,6 +5002,19 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
             lastHeld = held
         end
         if not placing and held and held.Parent ~= ch then pcall(function() hum:EquipTool(held) end) end
+        -- Owner (v-25zzzzzzzzzzzzzzz): no gun = hold a melee weapon (Bat, Knife...) so Kill Aura swings it.
+        if not placing and not held then
+            local inHand = ch:FindFirstChildOfClass("Tool")
+            if not (inHand and attr(inHand, "ToolType") == "Melee") then
+                local bp, mel, mt = LocalPlayer:FindFirstChild("Backpack"), nil, -1
+                for _, t in ipairs(bp and bp:GetChildren() or {}) do
+                    if t:IsA("Tool") and attr(t, "ToolType") == "Melee" and (tonumber(attr(t, "Tier")) or 0) > mt then
+                        mel, mt = t, tonumber(attr(t, "Tier")) or 0
+                    end
+                end
+                if mel then pcall(function() hum:EquipTool(mel) end) end
+            end
+        end
         end)
     end
     -- One leg of a walk; jumps when stuck for a second. True when within 3 studs (flat).

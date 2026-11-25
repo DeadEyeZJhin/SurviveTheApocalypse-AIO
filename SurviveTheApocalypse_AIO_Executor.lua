@@ -1,11 +1,11 @@
 local IS_APOC = game.GameId == 9098570654; local Players = game:GetService("Players")
 if not game:IsLoaded() then game.Loaded:Wait() end; while not Players.LocalPlayer do task.wait() end; local LocalPlayer = Players.LocalPlayer
 
--- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-25zzzzzzzzzzzz.
+-- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-25zzzzzzzzzzzzz.
 -- Install: put this file in your executor's autoexec folder or run it in a match. Own menu window: Right Alt hides / shows it. V = Speed, N = Noclip.
 -- Runs only in Survive the Apocalypse. Settings go to the executor's workspace folder. Use at your own risk: it sends the game's own messages (pickup, crates) and the game has an anti-cheat. Vibecoded.
 local NO_LOGS = true  -- true = no log files and no console lines (public copy)
-local VERSION = "aio-2026-11-25zzzzzzzzzzzz"  -- bump on every edit so the log shows which copy ran
+local VERSION = "aio-2026-11-25zzzzzzzzzzzzz"  -- bump on every edit so the log shows which copy ran
 local GAME_ID, LOG_FILE, APOC_DIR = "", "hbx_log.txt", "SurviveTheApocalypse"
 local logDirOk, logDirErr = pcall(function()
     local ok, id = pcall(function() return game.GameId end); if not ok or not id or id == 0 then id = game.PlaceId end
@@ -2561,7 +2561,7 @@ local function startApocHelper()
 -- Found in the game's ItemInteractClient / BackpackClient (dump\9098570654). AdjustBackpack with nil = UNSTORE (drops
 -- the bag's contents), so it is only ever called with an item. Log: C:\matcha\workspace\apoc_log.txt.
 -- Notes for Claude: D:\NPCHitBoxExpander\Documentation.md.
-local VERSION = "2026-11-25zzzzzzzzzzzz"  -- bump on every edit so the log shows which copy ran
+local VERSION = "2026-11-25zzzzzzzzzzzzz"  -- bump on every edit so the log shows which copy ran
 local GAME_ID = 9098570654
 
 local Players     = game:GetService("Players")
@@ -4179,7 +4179,7 @@ local function findTeleporters()
     end
     log("Lobby: Eternal Night portal found (" .. #tpParts .. " parts)")
 end
-local farmTravelAt = 0
+local farmTravelAt, farmTravelTries, farmWalkLogged = 0, 0, false
 local function lobbyStep()
     local now = os.clock()
     if now - lobbyTime < 1.0 then return end
@@ -4191,10 +4191,36 @@ local function lobbyStep()
         lobbyStatus = "Auto Farm: going to the Endless lobby"
         if now >= farmTravelAt then
             farmTravelAt = now + 15
+            farmTravelTries = farmTravelTries + 1
             task.spawn(function()
                 local ok, err = pcall(function() return remote("Misc", "EternalNightTravel"):InvokeServer() end)
-                say("Auto Farm: Endless travel sent (" .. (ok and "ok" or tostring(err)) .. ")")
+                say("Auto Farm: Endless travel sent (" .. (ok and ("ok, answer " .. tostring(err)) or tostring(err)) .. ")")
             end)
+        end
+        -- v-25zzzzzzzzzzzzz (owner's tablet, Delta: the remote answered ok 20 times, no teleport): backup after 2 tries =
+        -- walk into the portal (walking only) and press any prompt on it.
+        if farmTravelTries >= 2 and tpParts and #tpParts > 0 then
+            local ch = LocalPlayer.Character
+            local hum, hrp = ch and ch:FindFirstChildOfClass("Humanoid"), ch and ch:FindFirstChild("HumanoidRootPart")
+            if hum and hrp then
+                local best, bd
+                for _, p in ipairs(tpParts) do
+                    local q = partPos(p)
+                    local d = q and (q - hrp.Position).Magnitude
+                    if d and (not bd or d < bd) then best, bd = q, d end
+                end
+                if best then
+                    lobbyStatus = "Auto Farm: walking into the Endless portal (" .. math.floor(bd) .. " studs)"
+                    pcall(function() hum:MoveTo(best) end)
+                    if bd < 15 and type(fireproximityprompt) == "function" then
+                        local portal = workspace:FindFirstChild("Lobby") and workspace.Lobby:FindFirstChild("EternalPortal")
+                        for _, d in ipairs(portal and portal:GetDescendants() or {}) do
+                            if d:IsA("ProximityPrompt") then pcall(fireproximityprompt, d) end
+                        end
+                    end
+                    if not farmWalkLogged then farmWalkLogged = true; say("Auto Farm: travel did not work, walking into the portal") end
+                end
+            end
         end
         return
     end

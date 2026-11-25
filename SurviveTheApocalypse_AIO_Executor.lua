@@ -1,11 +1,11 @@
 local IS_APOC = game.GameId == 9098570654; local Players = game:GetService("Players")
 if not game:IsLoaded() then game.Loaded:Wait() end; while not Players.LocalPlayer do task.wait() end; local LocalPlayer = Players.LocalPlayer
 
--- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-25zzzzzzzzzzz.
+-- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-25zzzzzzzzzzzz.
 -- Install: put this file in your executor's autoexec folder or run it in a match. Own menu window: Right Alt hides / shows it. V = Speed, N = Noclip.
 -- Runs only in Survive the Apocalypse. Settings go to the executor's workspace folder. Use at your own risk: it sends the game's own messages (pickup, crates) and the game has an anti-cheat. Vibecoded.
 local NO_LOGS = true  -- true = no log files and no console lines (public copy)
-local VERSION = "aio-2026-11-25zzzzzzzzzzz"  -- bump on every edit so the log shows which copy ran
+local VERSION = "aio-2026-11-25zzzzzzzzzzzz"  -- bump on every edit so the log shows which copy ran
 local GAME_ID, LOG_FILE, APOC_DIR = "", "hbx_log.txt", "SurviveTheApocalypse"
 local logDirOk, logDirErr = pcall(function()
     local ok, id = pcall(function() return game.GameId end); if not ok or not id or id == 0 then id = game.PlaceId end
@@ -2561,7 +2561,7 @@ local function startApocHelper()
 -- Found in the game's ItemInteractClient / BackpackClient (dump\9098570654). AdjustBackpack with nil = UNSTORE (drops
 -- the bag's contents), so it is only ever called with an item. Log: C:\matcha\workspace\apoc_log.txt.
 -- Notes for Claude: D:\NPCHitBoxExpander\Documentation.md.
-local VERSION = "2026-11-25zzzzzzzzzzz"  -- bump on every edit so the log shows which copy ran
+local VERSION = "2026-11-25zzzzzzzzzzzz"  -- bump on every edit so the log shows which copy ran
 local GAME_ID = 9098570654
 
 local Players     = game:GetService("Players")
@@ -5566,6 +5566,21 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
                 -- Phase 1: loot (Auto Pickup with scrap + batteries on) and try to craft.
                 step("loot: Auto Pickup toggles")
                 for _, k in ipairs({"on", "scrap", "batt"}) do pcall(UI.SetValue, id(k), true) end
+                noclipNow = false
+                -- Owner: Healing Pad = 60 scrap + 4 batteries. The totals are workspace attributes Scrap / Batteries
+                -- (scan v-25z); only what is still missing is walked to, and Craft is sent once both are enough.
+                -- (v-25zzzzzzzzzzzz: these lines were lost in v-25zzz, so the farm never walked to loot.)
+                local sc, bt = tonumber(attr(workspace, "Scrap")), tonumber(attr(workspace, "Batteries"))
+                local needScrap, needBatt = not sc or sc < 60, not bt or bt < 4
+                local have = "scrap " .. tostring(sc) .. "/60, batteries " .. tostring(bt) .. "/4"
+                if have ~= lastHave then lastHave = have; log("Auto Farm: have " .. have) end
+                if not (needScrap or needBatt) then doing("enough scrap and batteries, crafting the Healing Pad") end
+                if os.clock() >= craftAt and (not sc or not bt or not (needScrap or needBatt)) then
+                    craftAt = os.clock() + 5
+                    local okC, res = pcall(function() return remote("Crafting", "Craft"):InvokeServer(PAD) end)
+                    local r = tostring(okC) .. " " .. tostring(res)
+                    if r ~= lastCraft then lastCraft = r; log("Auto Farm: craft " .. PAD .. " -> " .. r) end
+                end
                 -- Owner (v-25zzzz): loot walks go for scrap and batteries only; guns are taken in passing (gear()).
                 if not padTool() and (needScrap or needBatt) then
                     step("loot: choose an item")

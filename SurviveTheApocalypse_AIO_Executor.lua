@@ -1,11 +1,11 @@
 local IS_APOC = game.GameId == 9098570654; local Players = game:GetService("Players")
 if not game:IsLoaded() then game.Loaded:Wait() end; while not Players.LocalPlayer do task.wait() end; local LocalPlayer = Players.LocalPlayer
 
--- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-25zzy.
+-- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-25zzz.
 -- Install: put this file in your executor's autoexec folder or run it in a match. Own menu window: Right Alt hides / shows it. V = Speed, N = Noclip.
 -- Runs only in Survive the Apocalypse. Settings go to the executor's workspace folder. Use at your own risk: it sends the game's own messages (pickup, crates) and the game has an anti-cheat. Vibecoded.
 local NO_LOGS = true  -- true = no log files and no console lines (public copy)
-local VERSION = "aio-2026-11-25zzy"  -- bump on every edit so the log shows which copy ran
+local VERSION = "aio-2026-11-25zzz"  -- bump on every edit so the log shows which copy ran
 local GAME_ID, LOG_FILE, APOC_DIR = "", "hbx_log.txt", "SurviveTheApocalypse"
 local logDirOk, logDirErr = pcall(function()
     local ok, id = pcall(function() return game.GameId end); if not ok or not id or id == 0 then id = game.PlaceId end
@@ -2561,7 +2561,7 @@ local function startApocHelper()
 -- Found in the game's ItemInteractClient / BackpackClient (dump\9098570654). AdjustBackpack with nil = UNSTORE (drops
 -- the bag's contents), so it is only ever called with an item. Log: C:\matcha\workspace\apoc_log.txt.
 -- Notes for Claude: D:\NPCHitBoxExpander\Documentation.md.
-local VERSION = "2026-11-25zzy"  -- bump on every edit so the log shows which copy ran
+local VERSION = "2026-11-25zzz"  -- bump on every edit so the log shows which copy ran
 local GAME_ID = 9098570654
 
 local Players     = game:GetService("Players")
@@ -4812,19 +4812,35 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
     -- v-25zc fell under the map (y -103) with Noclip on all the time: now Noclip only for the edge walk and the
     -- straight-line fallback; the border parts alone stay passable (move_border).
     local noclipNow, onPad, padWall = false, false, nil
-    -- Owner: not everyone has the Heavy Revolver (Outlaw class). Any gun you own (Tool with ToolType "Gun") is held:
-    -- the Heavy Revolver first, else the highest Tier.
+    -- Owner: not everyone has the Heavy Revolver (Outlaw class). Any gun you own (Tool with ToolType "Gun") can be held:
+    -- the Heavy Revolver first, else the highest Tier. v-25zzz (owner): a gun that does not fire (no Stats / no Shoot /
+    -- projectile, the ones Kill Aura cannot shoot), is out of ammo (magazine and reserve 0) or does not reload (magazine
+    -- 0 for 10 s in hand) is switched for the next one; "does not reload" is retried after 2 min.
+    local gunBad, gunEmpty, gunWas, lastHeld = {}, {}, nil, nil
+    local function gunProblem(t)
+        local stats = t:FindFirstChild("Stats")
+        if not stats or not t:FindFirstChild("Shoot") or attr(stats, "Projectile") then return "does not fire" end
+        if gunBad[t] and os.clock() < gunBad[t] then return "does not reload" end
+        local mag = tonumber(attr(t, "Ammo"))
+        local okR, left = pcall(function() return LocalPlayer.Ammo:GetAttribute(attr(stats, "AmmoType")) end)
+        left = okR and tonumber(left)
+        if mag and mag <= 0 and left and left <= 0 then return "out of ammo" end
+        return nil
+    end
+    -- the best gun that works (nil if none), the best gun of any kind, how many guns you have
     local function bestGun(ch)
-        local best, bestS
+        local good, goodS, any, anyS, n = nil, nil, nil, nil, 0
         for _, holder in ipairs({ch, LocalPlayer:FindFirstChild("Backpack")}) do
             for _, t in ipairs(holder and holder:GetChildren() or {}) do
                 if t:IsA("Tool") and attr(t, "ToolType") == "Gun" then
+                    n = n + 1
                     local sc = (t.Name == GUN and 100 or 0) + (tonumber(attr(t, "Tier")) or 0)
-                    if not bestS or sc > bestS then best, bestS = t, sc end
+                    if not anyS or sc > anyS then any, anyS = t, sc end
+                    if not gunProblem(t) and (not goodS or sc > goodS) then good, goodS = t, sc end
                 end
             end
         end
-        return best
+        return good, any, n
     end
     local function gear(ch, hum)
         for _, k in ipairs({"move_speedOn", "move_border"}) do pcall(UI.SetValue, k, true) end
@@ -4836,8 +4852,33 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
         local km = tonumber(attr(LocalPlayer, "KM_MAX_PLAYER_SPEED"))
         _G.APOC_SPEED_CAP = km and (km - 0.5) or nil
         if _G.HBX_RUN then pcall(UI.SetValue, "hbx_killOn_" .. tostring(_G.HBX_RUN), true) end
-        local gun = bestGun(ch)
-        if not placing and gun and gun.Parent ~= ch then pcall(function() hum:EquipTool(gun) end) end
+        local good, any, nGuns = bestGun(ch)
+        -- Owner: pick up guns all farm long, also while walking ("Guns (any)" on until you carry 3, then put back).
+        -- shortcut: 3 is a cap so guns do not crowd out scrap / batteries; raise it if the bag has room.
+        if nGuns < 3 and gunWas == nil then
+            gunWas = UI.GetValue(id("pick_gun")) == true
+            pcall(UI.SetValue, id("pick_gun"), true)
+        elseif nGuns >= 3 and gunWas ~= nil then
+            pcall(UI.SetValue, id("pick_gun"), gunWas)
+            gunWas = nil
+        end
+        local held = good or any
+        if held and held.Parent == ch then
+            local mag = tonumber(attr(held, "Ammo"))
+            if mag and mag <= 0 then
+                gunEmpty[held] = gunEmpty[held] or os.clock()
+                if os.clock() - gunEmpty[held] > 10 then gunBad[held], gunEmpty[held] = os.clock() + 120, nil end
+            else
+                gunEmpty[held] = nil
+            end
+        end
+        if held ~= lastHeld then
+            if held then log("Auto Farm: holding " .. held.Name .. (lastHeld and (" instead of " .. lastHeld.Name .. " ("
+                .. tostring(lastHeld.Parent and gunProblem(lastHeld) or "gone") .. ")") or "")
+                .. (good and "" or ", no gun works")) end
+            lastHeld = held
+        end
+        if not placing and held and held.Parent ~= ch then pcall(function() hum:EquipTool(held) end) end
     end
     -- One leg of a walk; jumps when stuck for a second. True when within 3 studs (flat).
     local stuckLogged = 0
@@ -5426,7 +5467,7 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
         end
     end)
     local placedAt, padPos, lastCraft, craftAt, lastState, scanned, fails, statusAt = nil, nil, nil, 0, nil, false, 0, 0
-    local padMissing, gunWas = nil, nil
+    local padMissing = nil
     while _G.APOC_RUN == RUN do
         task.wait(0.2)  -- was 1 s: a stop after every item (owner: walk-stop-walk-stop)
         local okLoop, errLoop = pcall(function()
@@ -5472,32 +5513,8 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
             elseif not placedAt and not padTool() then
                 -- Phase 1: loot (Auto Pickup with scrap + batteries on) and try to craft.
                 for _, k in ipairs({"on", "scrap", "batt"}) do pcall(UI.SetValue, id(k), true) end
-                -- Owner: no gun at all = grab one to defend yourself. "Guns (any)" is switched on until you have one,
-                -- then put back the way it was.
+                -- Owner: no working gun = go get one first (pickup itself is switched on in gear()).
                 local needGun = bestGun(ch) == nil
-                if needGun and gunWas == nil then
-                    gunWas = UI.GetValue(id("pick_gun")) == true
-                    pcall(UI.SetValue, id("pick_gun"), true)
-                    log("Auto Farm: you have no gun, taking the first one found")
-                elseif not needGun and gunWas ~= nil then
-                    pcall(UI.SetValue, id("pick_gun"), gunWas)
-                    log("Auto Farm: got a gun (" .. tostring((bestGun(ch) or {}).Name) .. ")")
-                    gunWas = nil
-                end
-                noclipNow = false
-                -- Owner: Healing Pad = 60 scrap + 4 batteries. The totals are workspace attributes Scrap / Batteries
-                -- (scan v-25z); only what is still missing is walked to, and Craft is sent once both are enough.
-                local sc, bt = tonumber(attr(workspace, "Scrap")), tonumber(attr(workspace, "Batteries"))
-                local needScrap, needBatt = not sc or sc < 60, not bt or bt < 4
-                local have = "scrap " .. tostring(sc) .. "/60, batteries " .. tostring(bt) .. "/4"
-                if have ~= lastHave then lastHave = have; log("Auto Farm: have " .. have) end
-                if not (needScrap or needBatt) then doing("enough scrap and batteries, crafting the Healing Pad") end
-                if os.clock() >= craftAt and (not sc or not bt or not (needScrap or needBatt)) then
-                    craftAt = os.clock() + 5
-                    local okC, res = pcall(function() return remote("Crafting", "Craft"):InvokeServer(PAD) end)
-                    local r = tostring(okC) .. " " .. tostring(res)
-                    if r ~= lastCraft then lastCraft = r; log("Auto Farm: craft " .. PAD .. " -> " .. r) end
-                end
                 if not padTool() and (needScrap or needBatt or needGun) then
                     local folder, best, bestD = workspace:FindFirstChild("DroppedItems"), nil, math.huge
                     local masked = attr(ch, "WearingGasMask") == true

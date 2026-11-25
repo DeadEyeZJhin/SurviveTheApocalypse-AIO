@@ -1,11 +1,11 @@
 local IS_APOC = game.GameId == 9098570654; local Players = game:GetService("Players")
 if not game:IsLoaded() then game.Loaded:Wait() end; while not Players.LocalPlayer do task.wait() end; local LocalPlayer = Players.LocalPlayer
 
--- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-25.23.
+-- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-25.24.
 -- Install: put this file in your executor's autoexec folder or run it in a match. Own menu window: Right Alt hides / shows it. V = Speed, N = Noclip.
 -- Runs only in Survive the Apocalypse. Settings go to the executor's workspace folder. Use at your own risk: it sends the game's own messages (pickup, crates) and the game has an anti-cheat. Vibecoded.
 local NO_LOGS = true  -- true = no log files and no console lines (public copy)
-local VERSION = "aio-2026-11-25.23"  -- bump on every edit so the log shows which copy ran
+local VERSION = "aio-2026-11-25.24"  -- bump on every edit so the log shows which copy ran
 local GAME_ID, LOG_FILE, APOC_DIR = "", "hbx_log.txt", "SurviveTheApocalypse"
 local logDirOk, logDirErr = pcall(function()
     local ok, id = pcall(function() return game.GameId end); if not ok or not id or id == 0 then id = game.PlaceId end
@@ -2489,28 +2489,32 @@ local function meleeStep(tool, now)
         end
     end
     if #targets == 0 then kill.status = "Kill Aura (melee " .. tool.Name .. "): nothing within " .. math.floor(range) .. " studs"; return end
-    -- speed test bookkeeping: damage = health the targets lost since the last swing
-    for _, t in ipairs(targets) do
-        local hv = hpOf(t)
-        local before = melee.hpSeen[t]
-        if hv and before and hv < before then melee.dmg = melee.dmg + (before - hv) end
-        melee.hpSeen[t] = hv
-    end
-    melee.fight = melee.fight + math.min(now - (melee.lastT or now), 0.5)
-    melee.lastT, melee.swings = now, melee.swings + 1
-    melee.phaseT = melee.phaseT or now
-    if not melee.gap and now - melee.phaseT >= 10 and melee.fight > 1 then
-        local g, dps = MELEE_TEST[melee.phase], melee.dmg / melee.fight
-        table.insert(melee.results[melee.phase], dps)
-        log(string.format("Kill Aura melee speed test: gap %.2f s -> %.1f swings/s, %.1f damage/s (%d swings, %.0f damage in %.1f s fighting)",
-            g, melee.swings / melee.fight, dps, melee.swings, melee.dmg, melee.fight))
-        melee.phase, melee.phaseT, melee.fight, melee.dmg, melee.swings = melee.phase % 2 + 1, now, 0, 0, 0
-        if #melee.results[1] >= 3 and #melee.results[2] >= 3 then
-            local function avg(t) local x = 0; for _, v in ipairs(t) do x = x + v end; return x / #t end
-            local a, b = avg(melee.results[1]), avg(melee.results[2])
-            melee.gap = b > a * 1.1 and MELEE_TEST[2] or MELEE_TEST[1]
-            log(string.format("Kill Aura melee speed test done: gap %.2f s = %.1f damage/s, gap %.2f s = %.1f damage/s -> keeping gap %.2f s",
-                MELEE_TEST[1], a, MELEE_TEST[2], b, melee.gap))
+    -- speed test counts only swings at zombies (game78: Scrap Piles have no health, so pile swings read "0 damage"
+    -- at both speeds and could pick the slow one). Zombies come first in targets, so a zombie first = a fight.
+    if hpOf(targets[1]) then
+        -- speed test bookkeeping: damage = health the targets lost since the last swing
+        for _, t in ipairs(targets) do
+            local hv = hpOf(t)
+            local before = melee.hpSeen[t]
+            if hv and before and hv < before then melee.dmg = melee.dmg + (before - hv) end
+            melee.hpSeen[t] = hv
+        end
+        melee.fight = melee.fight + math.min(now - (melee.lastT or now), 0.5)
+        melee.lastT, melee.swings = now, melee.swings + 1
+        melee.phaseT = melee.phaseT or now
+        if not melee.gap and now - melee.phaseT >= 10 and melee.fight > 1 then
+            local g, dps = MELEE_TEST[melee.phase], melee.dmg / melee.fight
+            table.insert(melee.results[melee.phase], dps)
+            log(string.format("Kill Aura melee speed test: gap %.2f s -> %.1f swings/s, %.1f damage/s (%d swings, %.0f damage in %.1f s fighting)",
+                g, melee.swings / melee.fight, dps, melee.swings, melee.dmg, melee.fight))
+            melee.phase, melee.phaseT, melee.fight, melee.dmg, melee.swings = melee.phase % 2 + 1, now, 0, 0, 0
+            if #melee.results[1] >= 3 and #melee.results[2] >= 3 then
+                local function avg(t) local x = 0; for _, v in ipairs(t) do x = x + v end; return x / #t end
+                local a, b = avg(melee.results[1]), avg(melee.results[2])
+                melee.gap = b > a * 1.1 and MELEE_TEST[2] or MELEE_TEST[1]
+                log(string.format("Kill Aura melee speed test done: gap %.2f s = %.1f damage/s, gap %.2f s = %.1f damage/s -> keeping gap %.2f s",
+                    MELEE_TEST[1], a, MELEE_TEST[2], b, melee.gap))
+            end
         end
     end
     melee.next = now + (melee.gap or MELEE_TEST[melee.phase])
@@ -2671,7 +2675,7 @@ local function startApocHelper()
 -- Found in the game's ItemInteractClient / BackpackClient (dump\9098570654). AdjustBackpack with nil = UNSTORE (drops
 -- the bag's contents), so it is only ever called with an item. Log: C:\matcha\workspace\apoc_log.txt.
 -- Notes for Claude: D:\NPCHitBoxExpander\Documentation.md.
-local VERSION = "2026-11-25.23"  -- bump on every edit so the log shows which copy ran
+local VERSION = "2026-11-25.24"  -- bump on every edit so the log shows which copy ran
 local GAME_ID = 9098570654
 
 local Players     = game:GetService("Players")

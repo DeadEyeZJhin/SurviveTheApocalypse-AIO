@@ -1,11 +1,11 @@
 local IS_APOC = game.GameId == 9098570654; local Players = game:GetService("Players")
 if not game:IsLoaded() then game.Loaded:Wait() end; while not Players.LocalPlayer do task.wait() end; local LocalPlayer = Players.LocalPlayer
 
--- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-25t.
+-- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-25v.
 -- Install: put this file in your executor's autoexec folder or run it in a match. Own menu window: Right Alt hides / shows it. V = Speed, N = Noclip.
 -- Runs only in Survive the Apocalypse. Settings go to the executor's workspace folder. Use at your own risk: it sends the game's own messages (pickup, crates) and the game has an anti-cheat. Vibecoded.
 local NO_LOGS = true  -- true = no log files and no console lines (public copy)
-local VERSION = "aio-2026-11-25t"  -- bump on every edit so the log shows which copy ran
+local VERSION = "aio-2026-11-25v"  -- bump on every edit so the log shows which copy ran
 local GAME_ID, LOG_FILE, APOC_DIR = "", "hbx_log.txt", "SurviveTheApocalypse"
 local logDirOk, logDirErr = pcall(function()
     local ok, id = pcall(function() return game.GameId end); if not ok or not id or id == 0 then id = game.PlaceId end
@@ -2381,28 +2381,27 @@ local function killFrame()
     end
     return auraStep(kill.gun, now)
 end
--- With Kill Aura armed in the menu, the key switches it on / off (toggle mode) or runs it while held (hold mode).
+-- Owner 2026-11-25: in toggle mode the Kill Aura switch in the menu, the quick button and the key are one setting:
+-- the key flips the menu switch itself, so all three always show the same. Hold mode: the switch arms it, the key
+-- runs it while held. setKillOn is filled in once the menu ids exist (further down).
+local setKillOn = function() end
 local function aimOrKill()
+    local down = cfg.aimKey ~= 0 and iskeypressed(cfg.aimKey)
+    local press = down and not kill.wasDown
+    kill.wasDown = down
+    if press and cfg.aimMode == 1 and IS_PRO then
+        cfg.killOn = not cfg.killOn
+        setKillOn(cfg.killOn)
+        log("Kill Aura " .. (cfg.killOn and "ON" or "OFF") .. " (key)")
+    end
     -- v-15u (owner): while Kill Aura runs, the Apocalypse helper switches to combat mode (no ESP, only food / ammo /
     -- meds picked up). It reads this flag; the helper alone (no hitbox script) never sees it set.
     -- Owner 2026-11-18: on Regular Kill Aura never runs, but the saved "armed" setting is kept for when Pro is back.
-    _G.HBX_AURA_ON = (IS_PRO and cfg.killOn and kill.active) and true or false
-    if not (IS_PRO and cfg.killOn) then
-        if kill.active or kill.status ~= "Kill Aura: off" then kill.active = false; killRelease(); kill.status = "Kill Aura: off" end
-        return
-    end
-    local down = cfg.aimKey ~= 0 and iskeypressed(cfg.aimKey)
-    local was = kill.active
-    if cfg.aimMode == 1 then
-        if down and not kill.wasDown then kill.active = not kill.active end
-    else
-        kill.active = down
-    end
-    kill.wasDown = down
-    if kill.active ~= was then log("Kill Aura " .. (kill.active and "ON" or "OFF") .. " (key)") end
+    kill.active = (IS_PRO and cfg.killOn and (cfg.aimMode == 1 or down)) and true or false
+    _G.HBX_AURA_ON = kill.active
     if not kill.active then
-        killRelease()
-        kill.status = "Kill Aura: armed, press the key to start"
+        local st = (IS_PRO and cfg.killOn) and "Kill Aura: hold the key to fire" or "Kill Aura: off"
+        if kill.status ~= st then killRelease(); kill.status = st end
         return
     end
     return killFrame()
@@ -2506,7 +2505,7 @@ local function startApocHelper()
 -- Found in the game's ItemInteractClient / BackpackClient (dump\9098570654). AdjustBackpack with nil = UNSTORE (drops
 -- the bag's contents), so it is only ever called with an item. Log: C:\matcha\workspace\apoc_log.txt.
 -- Notes for Claude: D:\NPCHitBoxExpander\Documentation.md.
-local VERSION = "2026-11-25t"  -- bump on every edit so the log shows which copy ran
+local VERSION = "2026-11-25v"  -- bump on every edit so the log shows which copy ran
 local GAME_ID = 9098570654
 
 local Players     = game:GetService("Players")
@@ -4577,6 +4576,7 @@ pcall(UI.RemoveTab, "NPC Hitbox"); pcall(UI.RemoveTab, "Apocalypse")
 -- the tab blank except "Enable". Each run therefore gets its own ids. _G.HBX_RUN also tells loops
 -- from earlier runs (still running after a re-execute) to stop.
 local RUN = tostring(math.floor(tick() * 1000))
+setKillOn = function(v) pcall(UI.SetValue, "hbx_killOn_" .. RUN, v) end
 _G.HBX_RUN = RUN
 local function id(name) return "hbx_" .. name .. "_" .. RUN end
 local menuErrorShown = false

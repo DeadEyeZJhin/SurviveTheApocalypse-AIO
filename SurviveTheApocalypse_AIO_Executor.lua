@@ -1,11 +1,11 @@
 local IS_APOC = game.GameId == 9098570654; local Players = game:GetService("Players")
 if not game:IsLoaded() then game.Loaded:Wait() end; while not Players.LocalPlayer do task.wait() end; local LocalPlayer = Players.LocalPlayer
 
--- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-25.25.
+-- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-25.26.
 -- Install: put this file in your executor's autoexec folder or run it in a match. Own menu window: Right Alt hides / shows it. V = Speed, N = Noclip.
 -- Runs only in Survive the Apocalypse. Settings go to the executor's workspace folder. Use at your own risk: it sends the game's own messages (pickup, crates) and the game has an anti-cheat. Vibecoded.
 local NO_LOGS = true  -- true = no log files and no console lines (public copy)
-local VERSION = "aio-2026-11-25.25"  -- bump on every edit so the log shows which copy ran
+local VERSION = "aio-2026-11-25.26"  -- bump on every edit so the log shows which copy ran
 local GAME_ID, LOG_FILE, APOC_DIR = "", "hbx_log.txt", "SurviveTheApocalypse"
 local logDirOk, logDirErr = pcall(function()
     local ok, id = pcall(function() return game.GameId end); if not ok or not id or id == 0 then id = game.PlaceId end
@@ -2428,15 +2428,10 @@ end
 -- <tool>.HitTargets:FireServer({targets}); seen with 1-3 zombie models, and with workspace.Structures["Scrap Pile"] /
 -- ["Crashed Car 2"]. Runs only when no gun is in hand. Every structure in reach is a target (owner: the game itself
 -- refuses hits on your own / friendly structures).
--- shortcut: gap 0.25 s (owner: "make the swing fast"), range = Stats.Range or 12, 3 targets a swing are guesses;
--- the "melee hit check" log lines tell whether hits do damage.
+-- One swing every frame: the speed test (games 73/75/78) gave more damage per second than one per 0.25 s.
+-- shortcut: 3 targets a swing is from the Remote Spy captures (1-3 seen); raise it if the game takes more.
 local MELEE_MAX = 3
--- Speed test (owner 2026-11-25 "test faster on purpose"; remove once known): while fighting, 10 s at one swing per
--- 0.25 s, then 10 s at one swing every frame, and so on. Each phase logs swings/s and the health the targets really
--- lost per second; after 3 phases of each, the gap with more damage per second is kept.
-local MELEE_TEST = {0.25, 0}
-local melee = {next = 0, sent = 0, checks = 0, phase = 1, phaseT = nil, fight = 0, lastT = nil, dmg = 0, swings = 0,
-    hpSeen = setmetatable({}, {__mode = "k"}), results = {{}, {}}, gap = nil}
+local melee = {sent = 0}
 local function meleeInHand()
     local c = LocalPlayer.Character
     for _, t in ipairs(c and c:GetChildren() or {}) do
@@ -2445,7 +2440,6 @@ local function meleeInHand()
     return nil
 end
 local function meleeStep(tool, now)
-    if now < melee.next then return end
     local c = LocalPlayer.Character
     local h = c and c:FindFirstChild("HumanoidRootPart")
     if not h then return end
@@ -2464,8 +2458,6 @@ local function meleeStep(tool, now)
                 if okR and typeof(rp) == "Vector3" then
                     local d = (rp - hp).Magnitude
                     if d <= range and auraTargetOk(m) then list[#list+1] = {m = m, d = d} end
-                    melee.dist = melee.dist or setmetatable({}, {__mode = "k"})
-                    melee.dist[m] = d
                 end
             end
         end
@@ -2489,51 +2481,10 @@ local function meleeStep(tool, now)
         end
     end
     if #targets == 0 then kill.status = "Kill Aura (melee " .. tool.Name .. "): nothing within " .. math.floor(range) .. " studs"; return end
-    -- speed test counts only swings at zombies (game78: Scrap Piles have no health, so pile swings read "0 damage"
-    -- at both speeds and could pick the slow one). Zombies come first in targets, so a zombie first = a fight.
-    if hpOf(targets[1]) then
-        -- speed test bookkeeping: damage = health the targets lost since the last swing
-        for _, t in ipairs(targets) do
-            local hv = hpOf(t)
-            local before = melee.hpSeen[t]
-            if hv and before and hv < before then melee.dmg = melee.dmg + (before - hv) end
-            melee.hpSeen[t] = hv
-        end
-        melee.fight = melee.fight + math.min(now - (melee.lastT or now), 0.5)
-        melee.lastT, melee.swings = now, melee.swings + 1
-        melee.phaseT = melee.phaseT or now
-        if not melee.gap and now - melee.phaseT >= 10 and melee.fight > 1 then
-            local g, dps = MELEE_TEST[melee.phase], melee.dmg / melee.fight
-            table.insert(melee.results[melee.phase], dps)
-            log(string.format("Kill Aura melee speed test: gap %.2f s -> %.1f swings/s, %.1f damage/s (%d swings, %.0f damage in %.1f s fighting)",
-                g, melee.swings / melee.fight, dps, melee.swings, melee.dmg, melee.fight))
-            melee.phase, melee.phaseT, melee.fight, melee.dmg, melee.swings = melee.phase % 2 + 1, now, 0, 0, 0
-            if #melee.results[1] >= 3 and #melee.results[2] >= 3 then
-                local function avg(t) local x = 0; for _, v in ipairs(t) do x = x + v end; return x / #t end
-                local a, b = avg(melee.results[1]), avg(melee.results[2])
-                melee.gap = b > a * 1.1 and MELEE_TEST[2] or MELEE_TEST[1]
-                log(string.format("Kill Aura melee speed test done: gap %.2f s = %.1f damage/s, gap %.2f s = %.1f damage/s -> keeping gap %.2f s",
-                    MELEE_TEST[1], a, MELEE_TEST[2], b, melee.gap))
-            end
-        end
-    end
-    melee.next = now + (melee.gap or MELEE_TEST[melee.phase])
-    local hp0 = hpOf(targets[1])
     pcall(function() tool.Swing:FireServer() end)
     local okH, err = pcall(function() tool.HitTargets:FireServer(targets) end)
     melee.sent = melee.sent + 1
     if not okH then log("Kill Aura melee: HitTargets failed: " .. tostring(err)) end
-    -- find-out: did the first swings do damage? (remove once known)
-    -- find-out: did hits land, and from how far? (first 30 checks, at most one per 0.5 s; remove once known)
-    if melee.checks < 30 and hp0 and now >= (melee.nextCheck or 0) then
-        melee.checks, melee.nextCheck = melee.checks + 1, now + 0.5
-        local t1, n1 = targets[1], targets[1].Name
-        local d1 = melee.dist and melee.dist[t1]
-        task.delay(0.7, function()
-            log("Kill Aura melee hit check: " .. tool.Name .. " on " .. n1 .. " at " .. (d1 and string.format("%.1f", d1) or "?")
-                .. " studs, hp " .. tostring(hp0) .. " > " .. tostring(hpOf(t1)))
-        end)
-    end
     kill.status = "Kill Aura (melee " .. tool.Name .. "): " .. #targets .. " target(s), " .. melee.sent .. " swings"
 end
 local function killFrame()
@@ -2675,7 +2626,7 @@ local function startApocHelper()
 -- Found in the game's ItemInteractClient / BackpackClient (dump\9098570654). AdjustBackpack with nil = UNSTORE (drops
 -- the bag's contents), so it is only ever called with an item. Log: C:\matcha\workspace\apoc_log.txt.
 -- Notes for Claude: D:\NPCHitBoxExpander\Documentation.md.
-local VERSION = "2026-11-25.25"  -- bump on every edit so the log shows which copy ran
+local VERSION = "2026-11-25.26"  -- bump on every edit so the log shows which copy ran
 local GAME_ID = 9098570654
 
 local Players     = game:GetService("Players")
@@ -4958,23 +4909,6 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
             end
         end
         log("Auto Farm scan: " .. (b and (m .. " border parts logged") or "no workspace.Map.Border"))
-        -- Find-out (owner: died in "the air is radioactive"; the radioactive area is unknown). Remove once known.
-        local k = 0
-        for _, d in ipairs(workspace:GetDescendants()) do
-            if k >= 40 then break end
-            local n = string.lower(d.Name)
-            for _, w in ipairs({"radi", "toxic", "fog", "gas", "nuclear", "reactor", "hazard", "contamin"}) do
-                if string.find(n, w, 1, true) then
-                    k = k + 1
-                    local pos = d:IsA("BasePart") and d.Position
-                    log("Auto Farm radiation scan: " .. d:GetFullName() .. " (" .. d.ClassName .. ")" .. attrs(d)
-                        .. (pos and (" at " .. fmt(pos.X) .. ", " .. fmt(pos.Y) .. ", " .. fmt(pos.Z) .. " size "
-                        .. fmt(d.Size.X) .. " x " .. fmt(d.Size.Y) .. " x " .. fmt(d.Size.Z)) or ""))
-                    break
-                end
-            end
-        end
-        log("Auto Farm radiation scan: " .. k .. " objects named like radiation / fog / gas (40 max)")
     end
 
     -- v-25zc fell under the map (y -103) with Noclip on all the time: now Noclip only for the edge walk and the
@@ -5070,7 +5004,7 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
     -- Radiation (game57 log): the character gets CurrentBiome = "Irradiated" inside it (health 100 -> 5 in 40 s without a
     -- gas mask). The guessed tile names never matched and are gone. Every spot where it shows is remembered; items,
     -- edge steps and pad spots within 90 studs of one are avoided (90 is a guess at the zone size, the biome log tells).
-    local badSpots, lastSafe, lastBiome, escaping, irrTiles, irrAt = {}, nil, nil, false, {}, 0
+    local badSpots, lastSafe, escaping, irrTiles, irrAt = {}, nil, false, {}, 0
     local tileUnder  -- defined below
     local function radNow()
         local ch = LocalPlayer.Character
@@ -5109,11 +5043,6 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
             local ch = LocalPlayer.Character
             local r = ch and ch:FindFirstChild("HumanoidRootPart")
             if r then
-                local b = tostring(attr(ch, "CurrentBiome"))
-                if b ~= lastBiome then
-                    lastBiome = b
-                    log("Auto Farm find-out: biome " .. b .. " at " .. where(r.Position) .. " (tile " .. tostring(tileUnder(r.Position)) .. ")")
-                end
                 if radNow() then
                     local new = true
                     for _, s0 in ipairs(badSpots) do if flat(s0 - r.Position).Magnitude < 30 then new = false; break end end
@@ -5458,37 +5387,6 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
     -- Owner rules: leave ONLY when (1) a horde really spawned: the Survived clock (player EternalNightSurvived, it
     -- pauses while a horde lives) stood still 6 s, or 3+ zombies with Horde = true; (2) Survived reached "Leave
     -- after" minutes; (3) you died. Never because of the countdown: no horde spawns at the map edge.
-    -- Find-out (owner): what hurts you with no zombie near (radiation?). Logs tile, position, attributes and any
-    -- on-screen "radioactive" text, at most once per 10 s, 30 times per match. Remove once the area is known.
-    local hurtLogs, hurtAt, lastHp = 0, 0, nil
-    local function hurtCheck(c, h)
-        local hp = h and h.Health
-        if hp and lastHp and hp < lastHp - 0.5 and hurtLogs < 30 and os.clock() - hurtAt > 10 then
-            local me = c:FindFirstChild("HumanoidRootPart")
-            local chars, near = workspace:FindFirstChild("Characters"), false
-            for _, z in ipairs(me and chars and chars:GetChildren() or {}) do
-                local zp = z ~= c and z:FindFirstChild("HumanoidRootPart")
-                if zp and (zp.Position - me.Position).Magnitude < 25 then near = true; break end
-            end
-            if me and not near then
-                hurtLogs, hurtAt = hurtLogs + 1, os.clock()
-                local texts = {}
-                pcall(function()
-                    for _, d in ipairs(LocalPlayer.PlayerGui:GetDescendants()) do
-                        if (d:IsA("TextLabel") or d:IsA("TextButton")) and string.find(string.lower(d.Text), "radioactiv", 1, true) then
-                            texts[#texts + 1] = d:GetFullName() .. (d.Visible and "" or " (hidden)")
-                        end
-                    end
-                end)
-                local se = LocalPlayer:FindFirstChild("StatusEffectTimers")
-                log("Auto Farm find-out: hurt " .. fmt(lastHp) .. " -> " .. fmt(hp) .. " with no zombie within 25 studs, at "
-                    .. where(me.Position) .. ", tile " .. tostring(tileUnder(me.Position)) .. " | character" .. attrs(c)
-                    .. " | status" .. (se and attrs(se) or " none") .. " | radioactive text: "
-                    .. (#texts > 0 and table.concat(texts, ", ") or "none"))
-            end
-        end
-        lastHp = hp
-    end
     task.spawn(function()
         local lastSurv, survMovedAt, gotLoot = nil, nil, false
         while _G.APOC_RUN == RUN and not leaving do
@@ -5499,7 +5397,6 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
                 -- horde zombies within 250 studs only: one far away on the map is not coming for you
                 local c = LocalPlayer.Character
                 local me = c and c:FindFirstChild("HumanoidRootPart")
-                if c then pcall(hurtCheck, c, c:FindFirstChildOfClass("Humanoid")) end
                 local chars, horde = workspace:FindFirstChild("Characters"), 0
                 for _, z in ipairs(me and chars and chars:GetChildren() or {}) do
                     local zp = attr(z, "Horde") == true and z:FindFirstChild("HumanoidRootPart")
@@ -5530,136 +5427,6 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
                     toLobby()
                 end
             end
-        end
-    end)
-    -- Find-out (owner 2026-11-25, game58: the real border wall stood ~60 studs before the MapRadius line, so "60 inside"
-    -- was AT the wall). Edge survey: the owner runs along the map edge by hand (Auto Farm on or off) and every 20 studs
-    -- moved within 400 studs of the edge one line is logged. Each workspace.Map.Border part is logged once (name,
-    -- size, position, turn). Remove once the farm measures the real wall.
-    task.spawn(function()
-        if NO_LOGS then return end  -- find-out only (owner's copy)
-        local lastAt, seenParts, borderMissingLogged = nil, {}, false
-        while _G.APOC_RUN == RUN do
-            task.wait(0.5)
-            local ch = LocalPlayer.Character
-            local r = ch and ch:FindFirstChild("HumanoidRootPart")
-            if r and attr(workspace, "EternalNight") == true then
-                local map = workspace:FindFirstChild("Map")
-                local bf = map and map:FindFirstChild("Border")
-                if not bf and not borderMissingLogged then
-                    borderMissingLogged = true
-                    log("Auto Farm survey: workspace.Map.Border is not there (not loaded yet?)")
-                end
-                for _, part in ipairs(bf and bf:GetDescendants() or {}) do
-                    if part:IsA("BasePart") and not seenParts[part] then
-                        seenParts[part] = true
-                        local rx, ry, rz = part.CFrame:ToOrientation()
-                        log("Auto Farm survey: border part " .. part:GetFullName() .. " size " .. fmt(part.Size.X) .. " x "
-                            .. fmt(part.Size.Y) .. " x " .. fmt(part.Size.Z) .. " at " .. where(part.Position) .. " turn "
-                            .. math.floor(math.deg(ry)) .. ", CanCollide " .. tostring(part.CanCollide) .. ", see-through "
-                            .. fmt(part.Transparency))
-                    end
-                end
-                local p = r.Position
-                local inside = borderR() - flat(p).Magnitude
-                if inside < 400 and (not lastAt or flat(p - lastAt).Magnitude >= 20) then
-                    lastAt = p
-                    local wd, wp = wallDist(p)
-                    local axis = outAxis(p)
-                    local cliff = "200+"
-                    for d = 5, 200, 5 do
-                        local g = ground(p + axis * d)
-                        if not g or g.Position.Y < p.Y - 20 then cliff = tostring(d); break end
-                    end
-                    local g0 = ground(p)
-                    log("Auto Farm survey: at " .. where(p) .. " | wall " .. (wd and (math.floor(wd) .. " studs (" .. wp.Name .. ")") or "none loaded")
-                        .. " | ground ends " .. cliff .. " studs further out | tile " .. tostring(tileUnder(p)) .. " | biome "
-                        .. tostring(attr(ch, "CurrentBiome")) .. " | flat " .. tostring(g0 and g0.Normal.Y > 0.97)
-                        .. " | room " .. math.floor(room(p)))
-                end
-            end
-        end
-    end)
-    -- Find-out (owner 2026-11-25: "how do they generate the map / structures?"). The server's own code cannot be read;
-    -- this saves what the game sends us, into SurviveTheApocalypse/mapgen/: (1) attributes of workspace, Map and
-    -- Map.Tiles + what Map holds (log); (2) every tile as it loads: name, position, size, distance from the centre and
-    -- the wall, angle, attributes (tiles_<time>.txt, added to every 15 s); (3) the game's client code and folders whose
-    -- names mention map / tile / generation / biome / border / radiation / zone / spawn / horde, decompiled to
-    -- code/*.txt (40 max). Remove once the generation is understood.
-    task.spawn(function()
-        if NO_LOGS then return end  -- find-out only: the public copy writes and decompiles nothing
-        task.wait(5)
-        pcall(function() if not isfolder("SurviveTheApocalypse/mapgen") then makefolder("SurviveTheApocalypse/mapgen") end end)
-        pcall(function() if not isfolder("SurviveTheApocalypse/mapgen/code") then makefolder("SurviveTheApocalypse/mapgen/code") end end)
-        local map = workspace:FindFirstChild("Map")
-        log("Auto Farm mapgen: workspace" .. attrs(workspace))
-        if map then
-            log("Auto Farm mapgen: Map" .. attrs(map))
-            local kids = {}
-            for _, c in ipairs(map:GetChildren()) do kids[#kids + 1] = c.Name .. " (" .. c.ClassName .. ", " .. #c:GetChildren() .. ")" .. attrs(c) end
-            log("Auto Farm mapgen: Map holds " .. table.concat(kids, "; "))
-        end
-        -- (3) the game's client code
-        local KEYS = {"map", "tile", "gen", "biome", "border", "radiat", "zone", "spawn", "horde", "terrain", "chunk", "world"}
-        local function wanted(n)
-            n = string.lower(n)
-            for _, k in ipairs(KEYS) do if string.find(n, k, 1, true) then return true end end
-            return false
-        end
-        local roots = {game:GetService("ReplicatedStorage"), game:GetService("ReplicatedFirst")}
-        local ps = LocalPlayer:FindFirstChild("PlayerScripts")
-        if ps then roots[#roots + 1] = ps end
-        local saved, folders = 0, {}
-        for _, root in ipairs(roots) do
-            for _, x in ipairs(root:GetDescendants()) do
-                local okN, full = pcall(function() return x:GetFullName() end)
-                if okN and wanted(x.Name) then
-                    if (x:IsA("ModuleScript") or x:IsA("LocalScript")) and saved < 40 then
-                        saved = saved + 1
-                        local okD, src = false, "this executor has no decompile"
-                        if type(decompile) == "function" then okD, src = pcall(decompile, x) end
-                        local fname = "SurviveTheApocalypse/mapgen/code/" .. string.gsub(full, "[^%w%._-]", "_") .. ".txt"
-                        pcall(writefile, fname, "-- " .. full .. " (" .. x.ClassName .. ")\n" .. tostring(src))
-                        log("Auto Farm mapgen: saved code " .. full .. " (" .. tostring(okD) .. ")")
-                    elseif not x:IsA("LuaSourceContainer") and #folders < 60 and #x:GetChildren() > 0 then
-                        local names, seenN = {}, {}
-                        for _, c in ipairs(x:GetChildren()) do
-                            if not seenN[c.Name] and #names < 25 then seenN[c.Name] = true; names[#names + 1] = c.Name end
-                        end
-                        folders[#folders + 1] = full
-                        log("Auto Farm mapgen: folder " .. full .. " (" .. x.ClassName .. ", " .. #x:GetChildren() .. " inside)"
-                            .. attrs(x) .. ": " .. table.concat(names, ", "))
-                    end
-                end
-            end
-        end
-        log("Auto Farm mapgen: " .. saved .. " code files saved, " .. #folders .. " folders listed")
-        -- (2) every tile, as it loads
-        local file = "SurviveTheApocalypse/mapgen/tiles_" .. os.time() .. ".txt"
-        local buf, seenT = {"name | x | z | size x | size z | from centre | from wall (+ = past it) | angle | attributes"}, {}
-        while _G.APOC_RUN == RUN do
-            local m = workspace:FindFirstChild("Map")
-            local tiles = m and m:FindFirstChild("Tiles")
-            local added = 0
-            for _, t in ipairs(tiles and tiles:GetChildren() or {}) do
-                if not seenT[t] then
-                    local okB, cf, size = pcall(function() return t:GetBoundingBox() end)
-                    if okB and cf then
-                        seenT[t] = true
-                        added = added + 1
-                        local pos = cf.Position
-                        local r = flat(pos).Magnitude
-                        buf[#buf + 1] = t.Name .. " | " .. fmt(pos.X) .. " | " .. fmt(pos.Z) .. " | " .. fmt(size.X) .. " | " .. fmt(size.Z)
-                            .. " | " .. fmt(r) .. " | " .. fmt(r - borderR()) .. " | " .. math.floor(math.deg(math.atan2(pos.Z, pos.X)))
-                            .. " |" .. attrs(t)
-                    end
-                end
-            end
-            if added > 0 then
-                pcall(writefile, file, table.concat(buf, "\n"))
-                log("Auto Farm mapgen: " .. added .. " more tiles saved (" .. (#buf - 1) .. " in " .. file .. ")")
-            end
-            task.wait(15)
         end
     end)
     local placedAt, padPos, lastCraft, craftAt, lastState, scanned, fails, statusAt = nil, nil, nil, 0, nil, false, 0, 0
@@ -5985,12 +5752,6 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
                         onPad = true
                     else
                         fails = fails + 1
-                        -- Find-out: the pad's own placement script, saved once if this executor can decompile.
-                        if fails == 1 and not NO_LOGS and type(decompile) == "function" and not isfile("SurviveTheApocalypse/BlueprintClient.txt") then
-                            local okD, src = pcall(decompile, tool:FindFirstChild("BlueprintClient"))
-                            pcall(writefile, "SurviveTheApocalypse/BlueprintClient.txt", tostring(okD and src or ("decompile failed: " .. tostring(src))))
-                            log("Auto Farm: BlueprintClient source saved (" .. tostring(okD) .. ")")
-                        end
                         task.wait(1)
                     end
                 else

@@ -1,11 +1,11 @@
 local IS_APOC = game.GameId == 9098570654; local Players = game:GetService("Players")
 if not game:IsLoaded() then game.Loaded:Wait() end; while not Players.LocalPlayer do task.wait() end; local LocalPlayer = Players.LocalPlayer
 
--- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-25.27.
+-- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-25.28.
 -- Install: put this file in your executor's autoexec folder or run it in a match. Own menu window: Right Alt hides / shows it. V = Speed, N = Noclip.
 -- Runs only in Survive the Apocalypse. Settings go to the executor's workspace folder. Use at your own risk: it sends the game's own messages (pickup, crates) and the game has an anti-cheat. Vibecoded.
 local NO_LOGS = true  -- true = no log files and no console lines (public copy)
-local VERSION = "aio-2026-11-25.27"  -- bump on every edit so the log shows which copy ran
+local VERSION = "aio-2026-11-25.28"  -- bump on every edit so the log shows which copy ran
 local GAME_ID, LOG_FILE, APOC_DIR = "", "hbx_log.txt", "SurviveTheApocalypse"
 local logDirOk, logDirErr = pcall(function()
     local ok, id = pcall(function() return game.GameId end); if not ok or not id or id == 0 then id = game.PlaceId end
@@ -2626,7 +2626,7 @@ local function startApocHelper()
 -- Found in the game's ItemInteractClient / BackpackClient (dump\9098570654). AdjustBackpack with nil = UNSTORE (drops
 -- the bag's contents), so it is only ever called with an item. Log: C:\matcha\workspace\apoc_log.txt.
 -- Notes for Claude: D:\NPCHitBoxExpander\Documentation.md.
-local VERSION = "2026-11-25.27"  -- bump on every edit so the log shows which copy ran
+local VERSION = "2026-11-25.28"  -- bump on every edit so the log shows which copy ran
 local GAME_ID = 9098570654
 
 local Players     = game:GetService("Players")
@@ -4818,6 +4818,33 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
                 if n % 3 == 0 then
                     local pressed = pressLobbyButton()
                     log("Auto Farm: pressed the game's lobby button(s): " .. (#pressed > 0 and table.concat(pressed, ", ") or "none found"))
+                end
+                -- Owner (v-25.28): still stuck after 6 tries (2 min) = die, so the Game Over screen sends you back by
+                -- itself ("Returning in 60s"). Health 0 first; still alive 8 s later = walk straight off the map edge
+                -- with Noclip (owner's way; game56: a fall alone only put you back in the middle).
+                if n % 6 == 0 then
+                    local ch = LocalPlayer.Character
+                    local hum, hrp = ch and ch:FindFirstChildOfClass("Humanoid"), ch and ch:FindFirstChild("HumanoidRootPart")
+                    if hum and hum.Health > 0 then
+                        log("Auto Farm: teleport failed " .. n .. " times, dying so Game Over returns you to the lobby")
+                        _G.APOC_FARM_DOING = "teleport failed " .. n .. " times: dying so Game Over returns you to the lobby"
+                        pcall(function() hum.Health = 0 end)
+                        pcall(function() hum:ChangeState(Enum.HumanoidStateType.Dead) end)
+                        task.delay(8, function()
+                            if hum.Parent and hum.Health > 0 and hrp and hrp.Parent then
+                                log("Auto Farm: still alive, walking off the map edge")
+                                _G.APOC_FARM_DOING = "still alive: walking off the map edge"
+                                pcall(UI.SetValue, "move_noclip", true)
+                                local out = Vector3.new(hrp.Position.X, 0, hrp.Position.Z)
+                                out = out.Magnitude > 1 and out.Unit or Vector3.new(1, 0, 0)
+                                for _ = 1, 60 do
+                                    if not hum.Parent or hum.Health <= 0 then break end
+                                    pcall(function() hum:MoveTo(hrp.Position + out * 60) end)
+                                    task.wait(0.5)
+                                end
+                            end
+                        end)
+                    end
                 end
                 task.wait(20)
             end

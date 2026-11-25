@@ -1,11 +1,11 @@
 local IS_APOC = game.GameId == 9098570654; local Players = game:GetService("Players")
 if not game:IsLoaded() then game.Loaded:Wait() end; while not Players.LocalPlayer do task.wait() end; local LocalPlayer = Players.LocalPlayer
 
--- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-25zzzzzzzzzzzzzzzz.
+-- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-25zzzzzzzzzzzzzzzzz.
 -- Install: put this file in your executor's autoexec folder or run it in a match. Own menu window: Right Alt hides / shows it. V = Speed, N = Noclip.
 -- Runs only in Survive the Apocalypse. Settings go to the executor's workspace folder. Use at your own risk: it sends the game's own messages (pickup, crates) and the game has an anti-cheat. Vibecoded.
 local NO_LOGS = true  -- true = no log files and no console lines (public copy)
-local VERSION = "aio-2026-11-25zzzzzzzzzzzzzzzz"  -- bump on every edit so the log shows which copy ran
+local VERSION = "aio-2026-11-25zzzzzzzzzzzzzzzzz"  -- bump on every edit so the log shows which copy ran
 local GAME_ID, LOG_FILE, APOC_DIR = "", "hbx_log.txt", "SurviveTheApocalypse"
 local logDirOk, logDirErr = pcall(function()
     local ok, id = pcall(function() return game.GameId end); if not ok or not id or id == 0 then id = game.PlaceId end
@@ -2451,7 +2451,9 @@ local function meleeStep(tool, now)
     if not h then return end
     local hp = h.Position
     local okRg, rg = pcall(function() return tool.Stats:GetAttribute("Range") end)
-    local range = (okRg and tonumber(rg)) or 12
+    -- Reach test (game73: a Bloater blew you up from outside the 12-stud reach): zombies up to 30 studs are hit; the hit
+    -- check lines (with distance) tell whether the server takes far hits. shortcut: back to 12 if they never land.
+    local range = math.max((okRg and tonumber(rg)) or 12, 30)
     local list = {}
     for _, f in ipairs(HBX.npcFolders) do
         local okK, kids = pcall(function() return f.folder:GetChildren() end)
@@ -2463,6 +2465,8 @@ local function meleeStep(tool, now)
                 if okR and typeof(rp) == "Vector3" then
                     local d = (rp - hp).Magnitude
                     if d <= range and auraTargetOk(m) then list[#list+1] = {m = m, d = d} end
+                    melee.dist = melee.dist or setmetatable({}, {__mode = "k"})
+                    melee.dist[m] = d
                 end
             end
         end
@@ -2513,11 +2517,14 @@ local function meleeStep(tool, now)
     melee.sent = melee.sent + 1
     if not okH then log("Kill Aura melee: HitTargets failed: " .. tostring(err)) end
     -- find-out: did the first swings do damage? (remove once known)
-    if melee.checks < 5 and hp0 then
-        melee.checks = melee.checks + 1
+    -- find-out: did hits land, and from how far? (first 30 checks, at most one per 0.5 s; remove once known)
+    if melee.checks < 30 and hp0 and now >= (melee.nextCheck or 0) then
+        melee.checks, melee.nextCheck = melee.checks + 1, now + 0.5
         local t1, n1 = targets[1], targets[1].Name
+        local d1 = melee.dist and melee.dist[t1]
         task.delay(0.7, function()
-            log("Kill Aura melee hit check: " .. tool.Name .. " on " .. n1 .. " hp " .. tostring(hp0) .. " > " .. tostring(hpOf(t1)))
+            log("Kill Aura melee hit check: " .. tool.Name .. " on " .. n1 .. " at " .. (d1 and string.format("%.1f", d1) or "?")
+                .. " studs, hp " .. tostring(hp0) .. " > " .. tostring(hpOf(t1)))
         end)
     end
     kill.status = "Kill Aura (melee " .. tool.Name .. "): " .. #targets .. " target(s), " .. melee.sent .. " swings"
@@ -2661,7 +2668,7 @@ local function startApocHelper()
 -- Found in the game's ItemInteractClient / BackpackClient (dump\9098570654). AdjustBackpack with nil = UNSTORE (drops
 -- the bag's contents), so it is only ever called with an item. Log: C:\matcha\workspace\apoc_log.txt.
 -- Notes for Claude: D:\NPCHitBoxExpander\Documentation.md.
-local VERSION = "2026-11-25zzzzzzzzzzzzzzzz"  -- bump on every edit so the log shows which copy ran
+local VERSION = "2026-11-25zzzzzzzzzzzzzzzzz"  -- bump on every edit so the log shows which copy ran
 local GAME_ID = 9098570654
 
 local Players     = game:GetService("Players")

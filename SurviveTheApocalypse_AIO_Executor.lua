@@ -1,11 +1,11 @@
 local IS_APOC = game.GameId == 9098570654; local Players = game:GetService("Players")
 if not game:IsLoaded() then game.Loaded:Wait() end; while not Players.LocalPlayer do task.wait() end; local LocalPlayer = Players.LocalPlayer
 
--- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-25zzzzz.
+-- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-25zzzzzz.
 -- Install: put this file in your executor's autoexec folder or run it in a match. Own menu window: Right Alt hides / shows it. V = Speed, N = Noclip.
 -- Runs only in Survive the Apocalypse. Settings go to the executor's workspace folder. Use at your own risk: it sends the game's own messages (pickup, crates) and the game has an anti-cheat. Vibecoded.
 local NO_LOGS = true  -- true = no log files and no console lines (public copy)
-local VERSION = "aio-2026-11-25zzzzz"  -- bump on every edit so the log shows which copy ran
+local VERSION = "aio-2026-11-25zzzzzz"  -- bump on every edit so the log shows which copy ran
 local GAME_ID, LOG_FILE, APOC_DIR = "", "hbx_log.txt", "SurviveTheApocalypse"
 local logDirOk, logDirErr = pcall(function()
     local ok, id = pcall(function() return game.GameId end); if not ok or not id or id == 0 then id = game.PlaceId end
@@ -2561,7 +2561,7 @@ local function startApocHelper()
 -- Found in the game's ItemInteractClient / BackpackClient (dump\9098570654). AdjustBackpack with nil = UNSTORE (drops
 -- the bag's contents), so it is only ever called with an item. Log: C:\matcha\workspace\apoc_log.txt.
 -- Notes for Claude: D:\NPCHitBoxExpander\Documentation.md.
-local VERSION = "2026-11-25zzzzz"  -- bump on every edit so the log shows which copy ran
+local VERSION = "2026-11-25zzzzzz"  -- bump on every edit so the log shows which copy ran
 local GAME_ID = 9098570654
 
 local Players     = game:GetService("Players")
@@ -4386,6 +4386,7 @@ local function drawMenu(tab)
                 local left = math.max(0, math.floor((tonumber(cfg.farmMin) or 91) * 60 - surv))
                 fs:Text("Leaving in: " .. hm(left / 60) .. " " .. (left % 60) .. " s")
                 fs:Text("Doing: " .. tostring(_G.APOC_FARM_DOING or "-"))
+                fs:Text("Script v" .. VERSION)  -- owner: tells which copy a friend runs
             else
                 fs:Text("Survived: -- (only in an Endless match)")
             end
@@ -4682,7 +4683,16 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
     end
     local placing = false  -- the pad is in hand on purpose: do not swap the revolver back in
     local leaving = false  -- set by the leave watcher below; stops every walk
-    local function active() return not leaving and _G.APOC_RUN == RUN and cfg.autoFarm and attr(workspace, "EternalNight") == true end
+    -- v-25zzzzzz watchdog (friend's screen: "Doing" stayed on "waiting for the Survived timer" at Survived 0:20, so
+    -- the farm loop had stopped without an error). Every active() call from the farm loop is a heartbeat; no beat for
+    -- 30 s = that loop is dropped (it stops at its next active() call) and a fresh one starts.
+    local loopThread, beat, oldLoops = nil, os.clock(), {}
+    local function active()
+        local co = coroutine.running()
+        if oldLoops[co] then return false end
+        if co == loopThread then beat = os.clock() end
+        return not leaving and _G.APOC_RUN == RUN and cfg.autoFarm and attr(workspace, "EternalNight") == true
+    end
     local function body()
         local ch = LocalPlayer.Character
         local hum, hrp = ch and ch:FindFirstChildOfClass("Humanoid"), ch and ch:FindFirstChild("HumanoidRootPart")
@@ -5470,7 +5480,9 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
     end)
     local placedAt, padPos, lastCraft, craftAt, lastState, scanned, fails, statusAt = nil, nil, nil, 0, nil, false, 0, 0
     local padMissing, timerWaitAt, timerLogged = nil, nil, false
-    while _G.APOC_RUN == RUN do
+    local function farmLoop()
+    loopThread, beat = coroutine.running(), os.clock()
+    while _G.APOC_RUN == RUN and not oldLoops[coroutine.running()] do
         task.wait(0.2)  -- was 1 s: a stop after every item (owner: walk-stop-walk-stop)
         local okLoop, errLoop = pcall(function()
         local ch, hum, hrp = body()
@@ -5755,6 +5767,20 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
         end)
         if not okLoop then log("Auto Farm ERROR (farm goes on): " .. tostring(errLoop)); doing("error, trying again: " .. tostring(errLoop)); task.wait(1) end
     end
+    end
+    task.spawn(function()
+        while _G.APOC_RUN == RUN do
+            task.wait(5)
+            if os.clock() - beat > 30 then
+                log("Auto Farm: loop stuck 30 s (last: " .. tostring(_G.APOC_FARM_DOING) .. "), starting a fresh one")
+                doing("was stuck, starting again")
+                if loopThread then oldLoops[loopThread] = true end
+                beat = os.clock()
+                task.spawn(farmLoop)
+            end
+        end
+    end)
+    farmLoop()
 end) end
 
 -- ===== Main loop =============================================================

@@ -1,11 +1,11 @@
 local IS_APOC = game.GameId == 9098570654; local Players = game:GetService("Players")
 if not game:IsLoaded() then game.Loaded:Wait() end; while not Players.LocalPlayer do task.wait() end; local LocalPlayer = Players.LocalPlayer
 
--- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-25n.
+-- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-25t.
 -- Install: put this file in your executor's autoexec folder or run it in a match. Own menu window: Right Alt hides / shows it. V = Speed, N = Noclip.
 -- Runs only in Survive the Apocalypse. Settings go to the executor's workspace folder. Use at your own risk: it sends the game's own messages (pickup, crates) and the game has an anti-cheat. Vibecoded.
 local NO_LOGS = true  -- true = no log files and no console lines (public copy)
-local VERSION = "aio-2026-11-25n"  -- bump on every edit so the log shows which copy ran
+local VERSION = "aio-2026-11-25t"  -- bump on every edit so the log shows which copy ran
 local GAME_ID, LOG_FILE, APOC_DIR = "", "hbx_log.txt", "SurviveTheApocalypse"
 local logDirOk, logDirErr = pcall(function()
     local ok, id = pcall(function() return game.GameId end); if not ok or not id or id == 0 then id = game.PlaceId end
@@ -250,6 +250,7 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
         for _, c in ipairs(t.conns) do pcall(function() c:Disconnect() end) end
         pcall(function() t.sg:Destroy() end)
     end
+    local quick  -- the quick-toggle tail; only the newest menu's round button carries it
     function UI.AddTab(name, draw)
         UI.RemoveTab(name)
         local t = {alive = true, conns = {}}
@@ -260,11 +261,111 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
         if not pcall(function() sg.Parent = (gethui and gethui()) or game:GetService("CoreGui") end) then
             sg.Parent = LP:WaitForChild("PlayerGui")
         end
-        local win = mk("Frame", {Size = UDim2.new(0, 680, 0, 540), Position = UDim2.new(0, 40, 0, 60), BackgroundColor3 = C.bg,
-            BorderSizePixel = 0, Active = true, Draggable = true}, sg)
+        -- Mobile (owner, 2026-11-25): drag with mouse or finger, so the old Frame.Draggable (mouse only) is gone.
+        local function isPress(i) return i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch end
+        local function isMove(i) return i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch end
+        local function dragger(h, begin, move, done)
+            local from
+            on(h.InputBegan, function(i) if isPress(i) then from = i.Position; begin() end end)
+            on(UIS.InputChanged, function(i) if from and isMove(i) then move(i.Position.X - from.X, i.Position.Y - from.Y) end end)
+            on(UIS.InputEnded, function(i) if from and isPress(i) then from = nil; if done then done() end end end)
+        end
+        local vp = workspace.CurrentCamera.ViewportSize
+        local small = vp.X < 760
+        -- Owner: the menu remembers the size (and spot) the player left it at, per menu, in this file.
+        local LAYOUT_FILE = "SurviveTheApocalypse/menu_" .. name:gsub("%W", "") .. ".json"
+        local lay = {}
+        pcall(function() lay = HS:JSONDecode(readfile(LAYOUT_FILE)) end)
+        local W0 = math.clamp(tonumber(lay.w) or 680, 300, math.max(300, vp.X - 20))
+        local H0 = math.clamp(tonumber(lay.h) or 540, 200, math.max(200, vp.Y - 70))
+        local X0 = math.clamp(tonumber(lay.x) or (small and 10 or 40), 0, math.max(0, vp.X - W0))
+        local Y0 = math.clamp(tonumber(lay.y) or (small and 50 or 60), 0, math.max(0, vp.Y - 30))
+        local win = mk("Frame", {Size = UDim2.new(0, W0, 0, H0), Position = UDim2.new(0, X0, 0, Y0), BackgroundColor3 = C.bg,
+            BorderSizePixel = 0, Active = true}, sg)
+        local fullSize
+        local function saveLayout()
+            local s = fullSize or win.Size
+            pcall(writefile, LAYOUT_FILE, HS:JSONEncode({w = s.X.Offset, h = s.Y.Offset,
+                x = win.AbsolutePosition.X, y = win.AbsolutePosition.Y}))
+        end
         corner(win, 6)
-        mk("TextLabel", {Size = UDim2.new(1, 0, 0, 30), BackgroundColor3 = C.accent, BorderSizePixel = 0, TextColor3 = C.fg,
-            Font = Enum.Font.GothamBold, TextSize = 15, Text = name .. "      (Right Alt hides / shows, drag here to move)"}, win)
+        local title = mk("TextLabel", {Size = UDim2.new(1, 0, 0, 30), BackgroundColor3 = C.accent, BorderSizePixel = 0, TextColor3 = C.fg,
+            Font = Enum.Font.GothamBold, TextSize = 15, TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
+            Text = name .. "   (Right Alt or the round button hides / shows, drag here)"}, win)
+        mk("UIPadding", {PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 70)}, title)
+        local p0
+        dragger(title, function() p0 = win.Position end, function(dx, dy) win.Position = p0 + UDim2.new(0, dx, 0, dy) end, saveLayout)
+        local function titleBtn(txt, x)
+            local b = mk("TextButton", {Size = UDim2.new(0, 28, 0, 24), Position = UDim2.new(1, x, 0, 3), BackgroundColor3 = C.row,
+                BorderSizePixel = 0, Text = txt, TextColor3 = C.fg, Font = Enum.Font.GothamBold, TextSize = 16, AutoButtonColor = false}, win)
+            corner(b, 4)
+            return b
+        end
+        local minBtn, closeBtn = titleBtn("-", -64), titleBtn("X", -32)
+        on(closeBtn.MouseButton1Click, function() win.Visible = false end)
+        local grip = mk("TextButton", {Size = UDim2.new(0, 18, 0, 18), Position = UDim2.new(1, -18, 1, -18), BackgroundColor3 = C.accent,
+            BackgroundTransparency = 0.3, BorderSizePixel = 0, Text = "", AutoButtonColor = false, ZIndex = 5}, win)
+        corner(grip, 4)
+        local s0
+        dragger(grip, function() s0 = win.AbsoluteSize end, function(dx, dy)
+            win.Size = UDim2.new(0, math.max(300, s0.X + dx), 0, math.max(200, s0.Y + dy))
+        end, saveLayout)
+        -- Round button: tap = hide / show the menu, drag = move it. One per menu, stacked down the left edge.
+        local nTabs = 0
+        for _ in pairs(tabs) do nTabs = nTabs + 1 end
+        local icon = mk("TextButton", {Size = UDim2.new(0, 46, 0, 46), Position = UDim2.new(0, 10, 0.35, (nTabs - 1) * 54),
+            BackgroundColor3 = C.accent, BorderSizePixel = 0, Text = name:sub(1, 3), TextColor3 = C.fg, Font = Enum.Font.GothamBold,
+            TextSize = 14, AutoButtonColor = false, ZIndex = 50}, sg)
+        corner(icon, 23)
+        mk("UIStroke", {Color = C.fg, Thickness = 1.5}, icon)
+        local ip0, moved
+        dragger(icon, function() ip0, moved = icon.Position, false end, function(dx, dy)
+            if math.abs(dx) + math.abs(dy) > 8 then moved = true end
+            if moved then icon.Position = ip0 + UDim2.new(0, dx, 0, dy) end
+        end)
+        on(icon.MouseButton1Click, function() if not moved then win.Visible = not win.Visible end end)
+        -- Quick toggles (owner): a small tab under the round button opens a list; tap a name to switch it on / off.
+        -- It hangs under the newest button (the lowest one), so it never covers the other button. A row hides when
+        -- that setting is not in the menu (Kill Aura is Pro-only).
+        if quick then pcall(function() quick:Destroy() end) end
+        -- Owner: compact list, the open / close tab sits at the bottom, under the toggles.
+        local list = mk("Frame", {Position = UDim2.new(0.5, -36, 1, 3), Size = UDim2.new(0, 72, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
+            BackgroundTransparency = 1}, icon)
+        mk("UIListLayout", {SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 2)}, list)
+        quick = list
+        local tail = mk("TextButton", {Size = UDim2.new(1, 0, 0, 22), BackgroundColor3 = C.row, BorderSizePixel = 0, LayoutOrder = 9,
+            Text = "v", TextColor3 = C.fg, Font = Enum.Font.GothamBold, TextSize = 15, AutoButtonColor = false, ZIndex = 50}, list)
+        corner(tail, 4)
+        list.Visible = true
+        local rows = {}
+        for i, q in ipairs({{"Speed", "^move_speedOn$"}, {"Noclip", "^move_noclip$"}, {"Kill Aura", "^hbx_killOn_"},
+                {"Auto Loot", "^apoc_on_"}}) do
+            local b = mk("TextButton", {Size = UDim2.new(1, 0, 0, 22), BackgroundColor3 = C.row, BorderSizePixel = 0, LayoutOrder = i,
+                Text = q[1], TextColor3 = C.fg, Font = Enum.Font.GothamBold, TextSize = 12, AutoButtonColor = false, ZIndex = 50,
+                Visible = false}, list)
+            corner(b, 4)
+            rows[#rows + 1] = {b = b, pat = q[2]}
+            on(b.MouseButton1Click, function()
+                for k in pairs(vals) do
+                    if type(k) == "string" and k:find(q[2]) then vals[k] = not vals[k]; break end
+                end
+            end)
+        end
+        local open = false
+        on(tail.MouseButton1Click, function()
+            open = not open
+            tail.Text = open and "^" or "v"
+            if not open then for _, r in ipairs(rows) do r.b.Visible = false end end
+        end)
+        on(RS.Heartbeat, function()
+            if not open then return end
+            for _, r in ipairs(rows) do
+                local k
+                for key in pairs(vals) do if type(key) == "string" and key:find(r.pat) then k = key; break end end
+                r.b.Visible = k ~= nil
+                r.b.BackgroundColor3 = k and vals[k] and C.accent or C.row
+            end
+        end)
         local cols = {}
         for i, side in ipairs({"Left", "Right"}) do
             local f = mk("ScrollingFrame", {Position = UDim2.new((i - 1) / 2, i == 1 and 6 or 3, 0, 36),
@@ -276,6 +377,13 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
                 PaddingRight = UDim.new(0, 10)}, f)
             cols[side] = f
         end
+        on(minBtn.MouseButton1Click, function()
+            local mini = cols.Left.Visible
+            for _, f in pairs(cols) do f.Visible = not mini end
+            grip.Visible = not mini
+            minBtn.Text = mini and "+" or "-"
+            if mini then fullSize = win.Size; win.Size = UDim2.new(0, win.AbsoluteSize.X, 0, 30) else win.Size, fullSize = fullSize, nil end
+        end)
         on(UIS.InputBegan, function(i, typing)
             if not typing and i.KeyCode == Enum.KeyCode.RightAlt then win.Visible = not win.Visible end
         end)
@@ -295,7 +403,7 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
             dot.Position = UDim2.new(0, m.X - 4, 0, m.Y - 4)
         end)
 
-        local W, seen, order = {}, {}, 0
+        local W, seen, order, lastW = {}, {}, 0, nil
         -- props apply once, when the widget is made; text and colours that change are set by the caller every pass.
         local function widget(class, key, col, props)
             order = order + 1
@@ -317,9 +425,43 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
                 W[key] = w
             end
             w.LayoutOrder, w.Visible = order, true
+            lastW = w
             return w, fresh
         end
         local pages = {}
+        -- Owner: short labels. Text in (brackets) moves behind a small "i" button; tap it to read, tap again to close.
+        local tip = mk("TextLabel", {Size = UDim2.new(0, 230, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundColor3 = C.box,
+            BorderSizePixel = 0, TextColor3 = C.fg, Font = Enum.Font.Gotham, TextSize = 13, TextWrapped = true,
+            TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 60, Visible = false}, sg)
+        corner(tip, 4)
+        mk("UIPadding", {PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8), PaddingTop = UDim.new(0, 6),
+            PaddingBottom = UDim.new(0, 6)}, tip)
+        local infoOf, tipFor = {}, nil
+        on(RS.Heartbeat, function() if tipFor and not (win.Visible and tipFor.Visible) then tip.Visible, tipFor = false, nil end end)
+        local function short(w, text)
+            local info = {}
+            text = tostring(text):gsub("%s*%b()", function(p) info[#info + 1] = p:sub(2, -2); return "" end)
+            local ib = w:FindFirstChild("Info")
+            if #info > 0 and not ib then
+                ib = mk("TextButton", {Name = "Info", Size = UDim2.new(0, 18, 0, 18), Position = UDim2.new(0, -24, 0, -1),
+                    BackgroundColor3 = C.box, BorderSizePixel = 0, Text = "i", TextColor3 = C.fg, Font = Enum.Font.GothamBold,
+                    TextSize = 12, AutoButtonColor = false}, w)
+                corner(ib, 9)
+                w.UIPadding.PaddingLeft = UDim.new(0, 30)
+                on(ib.MouseButton1Click, function()
+                    if tipFor == ib then tip.Visible, tipFor = false, nil; return end
+                    local p = ib.AbsolutePosition
+                    local x = p.X + 24
+                    if x + 230 > workspace.CurrentCamera.ViewportSize.X then x = p.X - 236 end
+                    tip.Text, tip.Position, tip.Visible, tipFor = infoOf[ib] or "", UDim2.new(0, x, 0, p.Y), true, ib
+                end)
+            end
+            if ib then
+                infoOf[ib] = table.concat(info, "; ")
+                if tipFor == ib then tip.Text = infoOf[ib] end
+            end
+            return text
+        end
 
         local function section(sname, side, names)
             local col = cols[side] or cols.Left
@@ -364,7 +506,7 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
                         if cb then pcall(cb, vals[id]) end
                     end)
                 end
-                b.Text = label
+                b.Text = short(b, label)
                 b.Box.BackgroundColor3 = vals[id] and C.accent or C.box
             end
             -- shortcut: no key capture; the key comes from the settings file. Add a capture button if users ask.
@@ -390,14 +532,14 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
                     end
                     on(b.MouseButton1Down, function(x) drag = true; set(x) end)
                     on(UIS.InputChanged, function(i)
-                        if drag and i.UserInputType == Enum.UserInputType.MouseMovement then set(i.Position.X) end
+                        if drag and isMove(i) then set(i.Position.X) end
                     end)
                     on(UIS.InputEnded, function(i)
-                        if i.UserInputType == Enum.UserInputType.MouseButton1 then drag = false end
+                        if isPress(i) then drag = false end
                     end)
                 end
                 local v = tonumber(vals[id]) or mn
-                b.Text = label .. ":  " .. (isInt and tostring(v) or string.format(fmt or "%.2f", v))
+                b.Text = short(b, label) .. ":  " .. (isInt and tostring(v) or string.format(fmt or "%.2f", v))
                 b.Track.Fill.Size = UDim2.new(math.clamp((v - mn) / (mx - mn), 0, 1), 0, 1, 0)
             end
             function sec:SliderInt(id, label, mn, mx, def, cb) slider(id, label, mn, mx, def, nil, true, cb) end
@@ -414,11 +556,12 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
                     on(b.MouseButton1Click, function() step(1) end)
                     on(b.MouseButton2Click, function() step(-1) end)
                 end
-                b.Text = label .. ":  < " .. tostring(items[(tonumber(vals[id]) or 0) + 1] or "?") .. " >"
+                b.Text = short(b, label .. ":  < " .. tostring(items[(tonumber(vals[id]) or 0) + 1] or "?") .. " >")
             end
             function sec:InputText(id, label, def, cb)
                 if vals[id] == nil then vals[id] = def or "" end
-                widget("TextLabel", id .. ":label", col, {BackgroundTransparency = 1, TextColor3 = C.dim, TextSize = 12}).Text = label
+                local lb = widget("TextLabel", id .. ":label", col, {BackgroundTransparency = 1, TextColor3 = C.dim, TextSize = 12})
+                lb.Text = short(lb, label)
                 local box, fresh = widget("TextBox", id, col, {BackgroundColor3 = C.box, ClearTextOnFocus = false})
                 if fresh then
                     on(box.FocusLost, function()
@@ -434,14 +577,34 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
                 b.Text = label
                 if fresh and cb then on(b.MouseButton1Click, function() pcall(cb) end) end
             end
-            -- Colour: click to step through 8 colours; it sits under the ESP toggle it belongs to.
+            -- Colour: click to step through 8 colours. Owner: it sits on the same row as the ESP toggle it belongs to
+            -- (toggle box, then colour swatch); only without a toggle right above does it get its own row.
             function sec:ColorPicker(id, r, g, b0, _, cb)
                 if vals[id] == nil then vals[id] = {r, g, b0} end
-                local b, fresh = widget("TextButton", id, col, {TextColor3 = C.dim, TextSize = 12})
+                local host = lastW and lastW:FindFirstChild("Box") and lastW
+                lastW = nil
+                local b, sw, fresh
+                if host then
+                    host.UIPadding.PaddingRight = UDim.new(0, 74)
+                    sw = host:FindFirstChild("Swatch:" .. id)
+                    fresh = not sw
+                    if fresh then
+                        sw = mk("TextButton", {Name = "Swatch:" .. id, Size = UDim2.new(0, 36, 0, 16), Position = UDim2.new(1, 30, 0.5, -8),
+                            BorderSizePixel = 0, Text = "", AutoButtonColor = false}, host)
+                        corner(sw, 3)
+                    end
+                    b = sw
+                else
+                    b, fresh = widget("TextButton", id, col, {TextColor3 = C.dim, TextSize = 12})
+                    if fresh then
+                        b.UIPadding.PaddingRight = UDim.new(0, 46)
+                        corner(mk("Frame", {Name = "Swatch", Size = UDim2.new(0, 36, 0, 14), Position = UDim2.new(1, 8, 0.5, -7),
+                            BorderSizePixel = 0}, b), 3)
+                    end
+                    b.Text = "      colour (click to change)"
+                    sw = b.Swatch
+                end
                 if fresh then
-                    b.UIPadding.PaddingRight = UDim.new(0, 46)
-                    corner(mk("Frame", {Name = "Swatch", Size = UDim2.new(0, 36, 0, 14), Position = UDim2.new(1, 8, 0.5, -7),
-                        BorderSizePixel = 0}, b), 3)
                     on(b.MouseButton1Click, function()
                         local c, at = vals[id], 0
                         for i, p in ipairs(PALETTE) do
@@ -452,8 +615,7 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
                     end)
                 end
                 local c = vals[id]
-                b.Text = "      colour (click to change)"
-                b.Swatch.BackgroundColor3 = Color3.new(c[1], c[2], c[3])
+                sw.BackgroundColor3 = Color3.new(c[1], c[2], c[3])
             end
             return sec
         end
@@ -2344,7 +2506,7 @@ local function startApocHelper()
 -- Found in the game's ItemInteractClient / BackpackClient (dump\9098570654). AdjustBackpack with nil = UNSTORE (drops
 -- the bag's contents), so it is only ever called with an item. Log: C:\matcha\workspace\apoc_log.txt.
 -- Notes for Claude: D:\NPCHitBoxExpander\Documentation.md.
-local VERSION = "2026-11-25n"  -- bump on every edit so the log shows which copy ran
+local VERSION = "2026-11-25t"  -- bump on every edit so the log shows which copy ran
 local GAME_ID = 9098570654
 
 local Players     = game:GetService("Players")
@@ -2493,7 +2655,7 @@ local ITEM_KINDS = {
     {key = "medical",   label = "Other healing items", on = true, toolType = "Medical", notNames = {"bandage", "medkit"}},
     {key = "emerald",   label = "Emeralds / Gems", on = true, names = {"emerald", "gem"}},
     {key = "keycard",   label = "Keycards",       on = true,  names = {"card"}},
-    {key = "throwable", label = "Grenades, Molotovs, Flashbangs, Tear Gas", on = false, toolType = "Throwable"},
+    {key = "throwable", label = "Throwables (grenades, molotovs, flashbangs, tear gas)", on = false, toolType = "Throwable"},
     {key = "gun",       label = "Guns (any)",     on = false, toolType = "Gun"},
     {key = "blueprint", label = "Blueprints (traps, wire)", on = false, toolType = "Blueprint"},
     {key = "car",       label = "Car parts (turrets, plating)", on = false, toolType = "CarAttachment"},
@@ -2957,29 +3119,29 @@ local AMMO_NAMES = {"Pistol Ammo", "Medium Ammo", "Long Ammo", "Shells"}  -- nam
 local ESP_KINDS = {
     {key = "armor", label = "Power Armor parts (Arms, Core)", on = true,  color = "Green", itemType = "QuestItem", group = "Places & quests"},
     -- v-15e (owner): ONE crate toggle for every kind (Default, Super, Emerald, Reactor...), any distance, not opened yet.
-    {key = "crate", label = "Crates not opened yet", on = true, color = "Yellow"},
+    {key = "crate", label = "Crates (not opened yet)", on = true, color = "Yellow"},
     -- v-20h (owner): Emerald crates hold the currency, so they get their own toggle, apart from other crates.
-    {key = "emeraldcrate", label = "Emerald Crates not opened yet (any distance)", on = true, color = "Green"},
+    {key = "emeraldcrate", label = "Emerald Crates (not opened yet, any distance)", on = true, color = "Green"},
     {key = "upgrader", label = "Weapon Upgrader (any distance)", on = true, color = "Orange"},
     -- v-15k (owner): "Blood Trial", world name unknown (only PlayerGui.Main.BloodTrial and the player attribute
     -- BloodTrialEligible were scanned). Any Map / Map.Tiles / workspace child whose name has "blood" gets the dot.
     {key = "bloodtrial", label = "Blood Trial (any distance)", on = true, color = "Red"},
     -- v-21a (owner): the game's top-of-screen message says when these can be raided; the label keeps it on screen.
-    {key = "military", label = "Military Base when raidable (any distance)", on = true, color = "Pink"},
+    {key = "military", label = "Military Base (when raidable, any distance)", on = true, color = "Pink"},
     {key = "nuclearraid", label = "Nuclear Reactor (text, any distance)", on = true, color = "Violet"},
     -- v-19a (owner): broken vehicles (Structures.<name>, attribute Dead = true until repaired) and survivors not
     -- rescued yet, as text, any distance. A repaired vehicle / rescued survivor loses its label.
     {key = "vehicle", label = "Broken vehicles (pick below, any distance)", on = true, color = "Orange"},
-    {key = "survivor", label = "Survivors not rescued yet (any distance)", on = true, color = "Light blue"},
+    {key = "survivor", label = "Survivors (not rescued yet, any distance)", on = true, color = "Light blue"},
     -- v-22r (owner): the Military Turret ITEM on the ground (blueprint you pick up with E), not placed turrets.
     -- Endless and normal games, violet, any distance while loaded.
     {key = "milturret", label = "Military Turret item (text, any distance)", on = true, color = "Violet", exact = "military turret"},
     -- v-20c (owner: admins run events where gems rain from the sky): gems on the ground, off by default. Not hidden
     -- while Auto Pickup takes gems, since raining gems land far outside pickup reach.
-    {key = "gem",   label = "Gems / Emeralds on the ground",  on = false, color = "Green",  names = {"emerald", "gem"}, group = "Gems"},
+    {key = "gem",   label = "Gems / Emeralds (on the ground)",  on = false, color = "Green",  names = {"emerald", "gem"}, group = "Gems"},
     {key = "gun",   label = "Guns",                           on = false, color = "Red",    toolType = "Gun", group = "Weapons"},
     {key = "melee", label = "Melee weapons",                  on = false, color = "Orange", toolType = "Melee"},
-    {key = "throw", label = "Grenades, Molotovs, Flashbangs", on = false, color = "Orange", toolType = "Throwable"},
+    {key = "throw", label = "Throwables (grenades, molotovs, flashbangs)", on = false, color = "Orange", toolType = "Throwable"},
     -- v-15k (owner): the old "Pistol ammo" kind; the menu's dropdown picks which ammo (saved key stays pistolammo).
     {key = "pistolammo", label = "Chosen ammo (dropdown below)", on = true, color = "Yellow", names = {"pistol ammo"}, group = "Ammo"},
     {key = "ammo",  label = "Ammo (other kinds)",             on = false, color = "Yellow", itemType = "Ammo"},
@@ -3002,7 +3164,7 @@ local ESP_KINDS = {
         itemType = "Resource", goodScrap = true},
     {key = "scrap", label = "Scrap",                          on = false, color = "Grey",   names = {"scrap"}},
     {key = "res",   label = "Other resources (Screws, Tray...)", on = false, color = "White", itemType = "Resource"},
-    {key = "wear",  label = "Armor, Gas Masks, Backpacks",    on = false, color = "Purple",
+    {key = "wear",  label = "Wearables (armor, gas masks, backpacks)",    on = false, color = "Purple",
         itemType = "Armor", itemType2 = "GasMask", names = {"backpack"}, group = "Gear, food, other"},
     {key = "food",  label = "Food & drinks",                  on = false, color = "Light blue", itemType = "Food"},
     {key = "other", label = "Everything else (car parts, blueprints, keycards...)", on = false, color = "White"},
@@ -4110,8 +4272,8 @@ local function lobbyMenu(sec)
     end
     sec:Combo(id("join"), "Auto Join" .. PRO_TAG, JOIN_MODES, cfg.joinMode)
     sec:SliderInt(id("size"), "Party Size (own room)", 1, 5, cfg.partySize)
-    sec:SliderInt(id("min"), "Join rooms with at least (players)", 1, 4, cfg.joinMin)
-    sec:SliderInt(id("leave"), "Leave when room drops to (0 = never)", 0, 4, cfg.leaveAt)
+    sec:SliderInt(id("min"), "Min players (join rooms with at least this many)", 1, 4, cfg.joinMin)
+    sec:SliderInt(id("leave"), "Leave at (leave when the room drops to this many players, 0 = never)", 0, 4, cfg.leaveAt)
     sec:Text(lobbyStatus)
 end
 local function drawMenu(tab)
@@ -4145,16 +4307,16 @@ local function drawMenu(tab)
         for _, k in ipairs(ITEM_KINDS) do
             if k.top then pickToggle(sec, k) end
         end
-        sec:Toggle(id("mask"), "Take a Gas Mask when not wearing one", cfg.mask)
+        sec:Toggle(id("mask"), "Gas Mask (take one when not wearing one)", cfg.mask)
         sec:SliderInt(id("range"), "Range (12 = safe, higher = test)", 4, 30, cfg.range)
-        sec:Toggle(id("fuel"), "Store Fuel in Backpack", cfg.fuel)
-        sec:SliderInt(id("fuelStopDay"), "Stop Fuel (store + ESP) from day (0 = never)", 0, 150, cfg.fuelStopDay)
-        sec:Toggle(id("scrap"), "Store Scrap & other resources in Backpack", cfg.scrap)
-        sec:Toggle(id("batt"), "Store Batteries in Backpack", cfg.batt)
-        sec:Toggle(id("battPack"), "Store Battery Packs in Backpack", cfg.battPack)
-        sec:Toggle(id("weaponBag"), "Store every weapon in Backpack (never equip)", cfg.weaponBag)
-        sec:Toggle(id("mreBag2"), "Store MREs in Backpack (not eaten)", cfg.mreBag2)
-        sec:Toggle(id("food"), "Eat Food when hungry", cfg.food)
+        sec:Toggle(id("fuel"), "Store Fuel (in Backpack)", cfg.fuel)
+        sec:SliderInt(id("fuelStopDay"), "Stop Fuel from day (store + ESP, 0 = never)", 0, 150, cfg.fuelStopDay)
+        sec:Toggle(id("scrap"), "Store Scrap (and other resources, in Backpack)", cfg.scrap)
+        sec:Toggle(id("batt"), "Store Batteries (in Backpack)", cfg.batt)
+        sec:Toggle(id("battPack"), "Store Battery Packs (in Backpack)", cfg.battPack)
+        sec:Toggle(id("weaponBag"), "Store weapons (every weapon in Backpack, never equip)", cfg.weaponBag)
+        sec:Toggle(id("mreBag2"), "Store MREs (in Backpack, not eaten)", cfg.mreBag2)
+        sec:Toggle(id("food"), "Auto eat (eat food when hungry)", cfg.food)
         sec:Toggle(id("armor"), "Better Armor only", cfg.armor)
         sec:Toggle(id("weapon"), "Better Melee (drops old)", cfg.weapon)
         sec:Toggle(id("bagUp"), "Better Backpack", cfg.bagUp)
@@ -4441,19 +4603,20 @@ UI.AddTab("Apocalypse", function(tab)
         sec:SliderFloat(id("size"), "Hitbox Size", 1, 25, cfg.hitboxSize, "%.1f")
         sec:SliderInt(id("dist"), "Max Distance", 1, 5000, cfg.maxDistance)
         if IS_PRO then  -- Owner 2026-11-18: Kill Aura is Pro-only, hidden on Regular
+            sec:Spacing(); sec:Text("-- Kill Aura --")
             sec:Toggle(id("killOn"), "Kill Aura (key switches it on/off)", cfg.killOn)
-            sec:Combo(id("aimKey"), "Kill Aura key", AIM_KEY_NAMES, aimKeyIndex(cfg.aimKey) - 1)
-            sec:Combo(id("aimMode"), "Kill Aura key mode", AIM_MODES, cfg.aimMode)
-            sec:SliderInt(id("auraRange"), "Kill Aura range (studs, green circle)", 10, 300, cfg.auraRange)
-            sec:Toggle(id("auraSleep"), "Kill Aura also shoots sleeping zombies", cfg.auraSleep)
-            sec:Toggle(id("auraGuide"), "Kill Aura circles and line (guide)", cfg.auraGuide)
-            sec:SliderInt(id("auraBounce"), "Kill Aura bounce distance (studs)", 5, 150, cfg.auraBounce)
-            sec:Combo(id("auraMode"), "Kill Aura target type", AURA_MODES, cfg.auraMode)
-            sec:SliderInt(id("auraMin"), "Group Priority: shoot only if it reaches N zombies", 1, 7, cfg.auraMin)
-            sec:SliderInt(id("auraWait"), "...or a zombie stayed in the circle (seconds, 0 = never)", 0, 15, cfg.auraWait)
-            sec:Toggle(id("auraCraft"), "Kill Aura crafts ammo (Ammo Crate)", cfg.auraCraft)
-            sec:SliderInt(id("auraCraftAt"), "...when reserve ammo is below", 1, 300, cfg.auraCraftAt)
-            sec:Toggle(id("auraTurret"), "Kill Aura fires your vehicle's turrets", cfg.auraTurret)
+            sec:Combo(id("aimKey"), "Aura key", AIM_KEY_NAMES, aimKeyIndex(cfg.aimKey) - 1)
+            sec:Combo(id("aimMode"), "Key mode", AIM_MODES, cfg.aimMode)
+            sec:SliderInt(id("auraRange"), "Range (studs, green circle)", 10, 300, cfg.auraRange)
+            sec:Toggle(id("auraSleep"), "Sleeping zombies (also shoot them)", cfg.auraSleep)
+            sec:Toggle(id("auraGuide"), "Guide (circles and line)", cfg.auraGuide)
+            sec:SliderInt(id("auraBounce"), "Bounce distance (studs)", 5, 150, cfg.auraBounce)
+            sec:Combo(id("auraMode"), "Target", AURA_MODES, cfg.auraMode)
+            sec:SliderInt(id("auraMin"), "Group size (Group Priority: shoot only if it reaches N zombies)", 1, 7, cfg.auraMin)
+            sec:SliderInt(id("auraWait"), "Group wait (Group Priority: or shoot when a zombie stayed in the circle this many seconds, 0 = never)", 0, 15, cfg.auraWait)
+            sec:Toggle(id("auraCraft"), "Craft ammo (at an Ammo Crate)", cfg.auraCraft)
+            sec:SliderInt(id("auraCraftAt"), "Craft below (when reserve ammo is below this)", 1, 300, cfg.auraCraftAt)
+            sec:Toggle(id("auraTurret"), "Vehicle turrets (fire your vehicle's turrets)", cfg.auraTurret)
             sec:Text(kill.status)
         end
         sec:Toggle(id("fovOn"), "Camera Field Of View", cfg.fovOn)

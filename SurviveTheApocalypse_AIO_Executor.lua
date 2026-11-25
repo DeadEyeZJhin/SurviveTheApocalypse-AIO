@@ -1,11 +1,11 @@
 local IS_APOC = game.GameId == 9098570654; local Players = game:GetService("Players")
 if not game:IsLoaded() then game.Loaded:Wait() end; while not Players.LocalPlayer do task.wait() end; local LocalPlayer = Players.LocalPlayer
 
--- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-25zzzzzzzzzzzzz.
+-- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-25zzzzzzzzzzzzzz.
 -- Install: put this file in your executor's autoexec folder or run it in a match. Own menu window: Right Alt hides / shows it. V = Speed, N = Noclip.
 -- Runs only in Survive the Apocalypse. Settings go to the executor's workspace folder. Use at your own risk: it sends the game's own messages (pickup, crates) and the game has an anti-cheat. Vibecoded.
 local NO_LOGS = true  -- true = no log files and no console lines (public copy)
-local VERSION = "aio-2026-11-25zzzzzzzzzzzzz"  -- bump on every edit so the log shows which copy ran
+local VERSION = "aio-2026-11-25zzzzzzzzzzzzzz"  -- bump on every edit so the log shows which copy ran
 local GAME_ID, LOG_FILE, APOC_DIR = "", "hbx_log.txt", "SurviveTheApocalypse"
 local logDirOk, logDirErr = pcall(function()
     local ok, id = pcall(function() return game.GameId end); if not ok or not id or id == 0 then id = game.PlaceId end
@@ -2561,7 +2561,7 @@ local function startApocHelper()
 -- Found in the game's ItemInteractClient / BackpackClient (dump\9098570654). AdjustBackpack with nil = UNSTORE (drops
 -- the bag's contents), so it is only ever called with an item. Log: C:\matcha\workspace\apoc_log.txt.
 -- Notes for Claude: D:\NPCHitBoxExpander\Documentation.md.
-local VERSION = "2026-11-25zzzzzzzzzzzzz"  -- bump on every edit so the log shows which copy ran
+local VERSION = "2026-11-25zzzzzzzzzzzzzz"  -- bump on every edit so the log shows which copy ran
 local GAME_ID = 9098570654
 
 local Players     = game:GetService("Players")
@@ -4209,7 +4209,13 @@ local function lobbyStep()
                     local d = q and (q - hrp.Position).Magnitude
                     if d and (not bd or d < bd) then best, bd = q, d end
                 end
-                if best then
+                if best and bd < 6 then
+                    -- Owner (PC + tablet): inside the portal the Endless window opened again and again and the trip came
+                    -- later. Now: stand still inside and send the trip every 3 s.
+                    lobbyStatus = "Auto Farm: in the Endless portal, sending the trip"
+                    pcall(function() hum:MoveTo(hrp.Position) end)
+                    if now >= farmTravelAt - 12 then farmTravelAt = now end  -- next travel in 3 s, not 15
+                elseif best then
                     lobbyStatus = "Auto Farm: walking into the Endless portal (" .. math.floor(bd) .. " studs)"
                     pcall(function() hum:MoveTo(best) end)
                     if bd < 15 and type(fireproximityprompt) == "function" then
@@ -5036,6 +5042,14 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
                 hum:MoveTo(pulseN % 3 == 0 and pos or hrp.Position)
             else
                 hum:MoveTo(pos)
+            end
+            -- Owner (screenshot: stuck at a low fence): something at knee height 4 studs ahead = jump over it.
+            local fwd = flat(pos - now)
+            if fwd.Magnitude > 0.1 then
+                local kp = RaycastParams.new()
+                kp.FilterType, kp.FilterDescendantsInstances = Enum.RaycastFilterType.Exclude, {ch}
+                local okK, hitK = pcall(function() return workspace:Raycast(now - Vector3.new(0, 1.5, 0), fwd.Unit * 4, kp) end)
+                if okK and hitK and hitK.Instance and hitK.Instance.CanCollide then hum.Jump = true end
             end
             if not lastPos or (hrp.Position - lastPos).Magnitude > 1 then lastPos, lastT, stuckFor = hrp.Position, os.clock(), 0
             elseif os.clock() - lastT > 1 then

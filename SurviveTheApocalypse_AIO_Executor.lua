@@ -1,11 +1,11 @@
 local IS_APOC = game.GameId == 9098570654; local Players = game:GetService("Players")
 if not game:IsLoaded() then game.Loaded:Wait() end; while not Players.LocalPlayer do task.wait() end; local LocalPlayer = Players.LocalPlayer
 
--- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-25.26.
+-- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-25.27.
 -- Install: put this file in your executor's autoexec folder or run it in a match. Own menu window: Right Alt hides / shows it. V = Speed, N = Noclip.
 -- Runs only in Survive the Apocalypse. Settings go to the executor's workspace folder. Use at your own risk: it sends the game's own messages (pickup, crates) and the game has an anti-cheat. Vibecoded.
 local NO_LOGS = true  -- true = no log files and no console lines (public copy)
-local VERSION = "aio-2026-11-25.26"  -- bump on every edit so the log shows which copy ran
+local VERSION = "aio-2026-11-25.27"  -- bump on every edit so the log shows which copy ran
 local GAME_ID, LOG_FILE, APOC_DIR = "", "hbx_log.txt", "SurviveTheApocalypse"
 local logDirOk, logDirErr = pcall(function()
     local ok, id = pcall(function() return game.GameId end); if not ok or not id or id == 0 then id = game.PlaceId end
@@ -2626,7 +2626,7 @@ local function startApocHelper()
 -- Found in the game's ItemInteractClient / BackpackClient (dump\9098570654). AdjustBackpack with nil = UNSTORE (drops
 -- the bag's contents), so it is only ever called with an item. Log: C:\matcha\workspace\apoc_log.txt.
 -- Notes for Claude: D:\NPCHitBoxExpander\Documentation.md.
-local VERSION = "2026-11-25.26"  -- bump on every edit so the log shows which copy ran
+local VERSION = "2026-11-25.27"  -- bump on every edit so the log shows which copy ran
 local GAME_ID = 9098570654
 
 local Players     = game:GetService("Players")
@@ -4772,13 +4772,53 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
     local function toLobby()
         local TS = game:GetService("TeleportService")
         -- Owner: never give up. Endless lobby, then the normal lobby, again and again every 20 s until you are out.
+        -- v-25.27 (owner: a friend's phone never got out, Survived 26:53 -> 98:47): the teleport's own failure reason is
+        -- shown on the menu, and every 3rd try also presses the game's own lobby button (Return to Lobby etc.).
+        local lastFail = nil
+        pcall(function()
+            LocalPlayer.OnTeleport:Connect(function(state, placeId, msg)
+                if state == Enum.TeleportState.Failed then
+                    lastFail = tostring(msg)
+                    log("Auto Farm: teleport to " .. tostring(placeId) .. " failed: " .. lastFail)
+                end
+            end)
+        end)
+        local function pressLobbyButton()
+            local pg = LocalPlayer:FindFirstChild("PlayerGui")
+            local pressed = {}
+            for _, d in ipairs(pg and pg:GetDescendants() or {}) do
+                if d:IsA("GuiButton") then
+                    local txt = d:IsA("TextButton") and d.Text or ""
+                    local lbl = d:FindFirstChildWhichIsA("TextLabel", true)
+                    if lbl then txt = txt .. " " .. lbl.Text end
+                    if string.find(string.lower(txt .. " " .. d.Name), "lobby", 1, true) then
+                        for _, sig in ipairs({"Activated", "MouseButton1Click"}) do
+                            if type(getconnections) == "function" then
+                                pcall(function() for _, c in ipairs(getconnections(d[sig])) do c:Fire() end end)
+                            elseif type(firesignal) == "function" then
+                                pcall(firesignal, d[sig])
+                            end
+                        end
+                        pressed[#pressed + 1] = d:GetFullName()
+                    end
+                end
+            end
+            return pressed
+        end
         task.spawn(function()
             local n = 0
             while _G.APOC_RUN == RUN do
                 n = n + 1
                 local to = n % 2 == 1 and 80046280333935 or 90148635862803
-                if n > 1 then log("Auto Farm: still in the match, teleport try " .. n .. " (place " .. to .. ")") end
+                if n > 1 then
+                    log("Auto Farm: still in the match, teleport try " .. n .. " (place " .. to .. ")")
+                    _G.APOC_FARM_DOING = "leaving: teleport try " .. n .. (lastFail and (" (last failed: " .. lastFail .. ")") or "")
+                end
                 pcall(function() TS:Teleport(to, LocalPlayer) end)
+                if n % 3 == 0 then
+                    local pressed = pressLobbyButton()
+                    log("Auto Farm: pressed the game's lobby button(s): " .. (#pressed > 0 and table.concat(pressed, ", ") or "none found"))
+                end
                 task.wait(20)
             end
         end)

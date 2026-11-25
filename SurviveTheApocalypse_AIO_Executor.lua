@@ -1,11 +1,11 @@
 local IS_APOC = game.GameId == 9098570654; local Players = game:GetService("Players")
 if not game:IsLoaded() then game.Loaded:Wait() end; while not Players.LocalPlayer do task.wait() end; local LocalPlayer = Players.LocalPlayer
 
--- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-25zzz.
+-- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-25zzzz.
 -- Install: put this file in your executor's autoexec folder or run it in a match. Own menu window: Right Alt hides / shows it. V = Speed, N = Noclip.
 -- Runs only in Survive the Apocalypse. Settings go to the executor's workspace folder. Use at your own risk: it sends the game's own messages (pickup, crates) and the game has an anti-cheat. Vibecoded.
 local NO_LOGS = true  -- true = no log files and no console lines (public copy)
-local VERSION = "aio-2026-11-25zzz"  -- bump on every edit so the log shows which copy ran
+local VERSION = "aio-2026-11-25zzzz"  -- bump on every edit so the log shows which copy ran
 local GAME_ID, LOG_FILE, APOC_DIR = "", "hbx_log.txt", "SurviveTheApocalypse"
 local logDirOk, logDirErr = pcall(function()
     local ok, id = pcall(function() return game.GameId end); if not ok or not id or id == 0 then id = game.PlaceId end
@@ -2561,7 +2561,7 @@ local function startApocHelper()
 -- Found in the game's ItemInteractClient / BackpackClient (dump\9098570654). AdjustBackpack with nil = UNSTORE (drops
 -- the bag's contents), so it is only ever called with an item. Log: C:\matcha\workspace\apoc_log.txt.
 -- Notes for Claude: D:\NPCHitBoxExpander\Documentation.md.
-local VERSION = "2026-11-25zzz"  -- bump on every edit so the log shows which copy ran
+local VERSION = "2026-11-25zzzz"  -- bump on every edit so the log shows which copy ran
 local GAME_ID = 9098570654
 
 local Players     = game:GetService("Players")
@@ -4852,6 +4852,7 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
         local km = tonumber(attr(LocalPlayer, "KM_MAX_PLAYER_SPEED"))
         _G.APOC_SPEED_CAP = km and (km - 0.5) or nil
         if _G.HBX_RUN then pcall(UI.SetValue, "hbx_killOn_" .. tostring(_G.HBX_RUN), true) end
+        pcall(function()
         local good, any, nGuns = bestGun(ch)
         -- Owner: pick up guns all farm long, also while walking ("Guns (any)" on until you carry 3, then put back).
         -- shortcut: 3 is a cap so guns do not crowd out scrap / batteries; raise it if the bag has room.
@@ -4879,6 +4880,7 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
             lastHeld = held
         end
         if not placing and held and held.Parent ~= ch then pcall(function() hum:EquipTool(held) end) end
+        end)
     end
     -- One leg of a walk; jumps when stuck for a second. True when within 3 studs (flat).
     local stuckLogged = 0
@@ -5513,9 +5515,8 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
             elseif not placedAt and not padTool() then
                 -- Phase 1: loot (Auto Pickup with scrap + batteries on) and try to craft.
                 for _, k in ipairs({"on", "scrap", "batt"}) do pcall(UI.SetValue, id(k), true) end
-                -- Owner: no working gun = go get one first (pickup itself is switched on in gear()).
-                local needGun = bestGun(ch) == nil
-                if not padTool() and (needScrap or needBatt or needGun) then
+                -- Owner (v-25zzzz): loot walks go for scrap and batteries only; guns are taken in passing (gear()).
+                if not padTool() and (needScrap or needBatt) then
                     local folder, best, bestD = workspace:FindFirstChild("DroppedItems"), nil, math.huge
                     local masked = attr(ch, "WearingGasMask") == true
                     local bestIt
@@ -5523,13 +5524,11 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
                         local n = string.lower(it.Name)
                         local batt = string.find(n, "battery", 1, true) ~= nil
                         local inf = itemInfo(it)
-                        local isGun = needGun and inf.toolType == "Gun"
-                        if (isGun or inf.type == "Resource" and (batt and needBatt or not batt and needScrap))
+                        if (inf.type == "Resource" and (batt and needBatt or not batt and needScrap))
                             and not (skipUntil[it] and os.clock() < skipUntil[it]) then
                             local p = itemPart(it)
                             local pos = p and partPos(p)
                             local d = pos and (pos - hrp.Position).Magnitude
-                            if d and isGun then d = d / 3 end  -- a gun first, unless it is 3x farther than the loot
                             if d and d < bestD then best, bestD, bestIt = pos, d, it end
                         end
                     end
@@ -5549,8 +5548,9 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
                             -- again and again). Reached but still there 3 s later = skipped 60 s, logged to find out why.
                             doing("waiting for Auto Pickup to take " .. bestIt.Name)
                             local t0 = os.clock()
-                            while bestIt.Parent and os.clock() - t0 < 3 do task.wait(0.2) end
-                            if bestIt.Parent then
+                            local function still() return bestIt.Parent ~= nil and bestIt.Parent == folder end
+                            while still() and os.clock() - t0 < 3 do task.wait(0.2) end
+                            if still() then
                                 -- backup: step right onto it and jump (game47: items 3-10 studs below you were not taken)
                                 local ip0 = itemPart(bestIt)
                                 local q = ip0 and partPos(ip0)
@@ -5558,10 +5558,10 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
                                     hum:MoveTo(q)
                                     hum.Jump = true
                                     local t1 = os.clock()
-                                    while bestIt.Parent and os.clock() - t1 < 2 do task.wait(0.2) end
+                                    while still() and os.clock() - t1 < 2 do task.wait(0.2) end
                                 end
                             end
-                            if bestIt.Parent then
+                            if still() then
                                 skipUntil[bestIt] = os.clock() + 60
                                 local ip = itemPart(bestIt)
                                 local d = ip and partPos(ip) and (partPos(ip) - hrp.Position)
@@ -5732,7 +5732,7 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
             end
         end
         end)
-        if not okLoop then log("Auto Farm ERROR (farm goes on): " .. tostring(errLoop)); task.wait(1) end
+        if not okLoop then log("Auto Farm ERROR (farm goes on): " .. tostring(errLoop)); doing("error, trying again: " .. tostring(errLoop)); task.wait(1) end
     end
 end) end
 

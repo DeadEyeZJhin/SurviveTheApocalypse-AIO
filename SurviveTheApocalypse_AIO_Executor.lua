@@ -1,11 +1,11 @@
 local IS_APOC = game.GameId == 9098570654; local Players = game:GetService("Players")
 if not game:IsLoaded() then game.Loaded:Wait() end; while not Players.LocalPlayer do task.wait() end; local LocalPlayer = Players.LocalPlayer
 
--- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-25v.
+-- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-25zg.
 -- Install: put this file in your executor's autoexec folder or run it in a match. Own menu window: Right Alt hides / shows it. V = Speed, N = Noclip.
 -- Runs only in Survive the Apocalypse. Settings go to the executor's workspace folder. Use at your own risk: it sends the game's own messages (pickup, crates) and the game has an anti-cheat. Vibecoded.
 local NO_LOGS = true  -- true = no log files and no console lines (public copy)
-local VERSION = "aio-2026-11-25v"  -- bump on every edit so the log shows which copy ran
+local VERSION = "aio-2026-11-25zg"  -- bump on every edit so the log shows which copy ran
 local GAME_ID, LOG_FILE, APOC_DIR = "", "hbx_log.txt", "SurviveTheApocalypse"
 local logDirOk, logDirErr = pcall(function()
     local ok, id = pcall(function() return game.GameId end); if not ok or not id or id == 0 then id = game.PlaceId end
@@ -234,7 +234,7 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
     local function moveMenu(tab)
         local s = tab:Section("Movement", "Left")
         s:Toggle("move_speedOn", "Speed (V)", false)
-        s:SliderInt("move_speed", "Walk speed", 16, 120, 30)
+        s:SliderFloat("move_speed", "Walk speed", 16, 120, 30, "%.1f")
         s:Toggle("move_noclip", "Noclip (N)", false)
         s:Toggle("move_border", "Drive through the map border (remembered)", false)
     end
@@ -276,6 +276,9 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
         local LAYOUT_FILE = "SurviveTheApocalypse/menu_" .. name:gsub("%W", "") .. ".json"
         local lay = {}
         pcall(function() lay = HS:JSONDecode(readfile(LAYOUT_FILE)) end)
+        -- Owner (2026-11-25): tap a section title to fold / unfold it; remembered here with the size and spot.
+        local collapsed = type(lay.collapsed) == "table" and lay.collapsed or {}
+        local curCollapsed = false
         local W0 = math.clamp(tonumber(lay.w) or 680, 300, math.max(300, vp.X - 20))
         local H0 = math.clamp(tonumber(lay.h) or 540, 200, math.max(200, vp.Y - 70))
         local X0 = math.clamp(tonumber(lay.x) or (small and 10 or 40), 0, math.max(0, vp.X - W0))
@@ -286,7 +289,7 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
         local function saveLayout()
             local s = fullSize or win.Size
             pcall(writefile, LAYOUT_FILE, HS:JSONEncode({w = s.X.Offset, h = s.Y.Offset,
-                x = win.AbsolutePosition.X, y = win.AbsolutePosition.Y}))
+                x = win.AbsolutePosition.X, y = win.AbsolutePosition.Y, collapsed = collapsed}))
         end
         corner(win, 6)
         local title = mk("TextLabel", {Size = UDim2.new(1, 0, 0, 30), BackgroundColor3 = C.accent, BorderSizePixel = 0, TextColor3 = C.fg,
@@ -314,10 +317,12 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
         local nTabs = 0
         for _ in pairs(tabs) do nTabs = nTabs + 1 end
         local icon = mk("TextButton", {Size = UDim2.new(0, 46, 0, 46), Position = UDim2.new(0, 10, 0.35, (nTabs - 1) * 54),
-            BackgroundColor3 = C.accent, BorderSizePixel = 0, Text = name:sub(1, 3), TextColor3 = C.fg, Font = Enum.Font.GothamBold,
-            TextSize = 14, AutoButtonColor = false, ZIndex = 50}, sg)
+            BackgroundColor3 = C.accent, BorderSizePixel = 0, Text = name == "Apocalypse" and "STA" or name:sub(1, 3),
+            TextColor3 = Color3.new(1, 1, 1), TextStrokeColor3 = Color3.new(0, 0, 0), TextStrokeTransparency = 0,
+            Font = Enum.Font.GothamBlack, TextSize = 16, AutoButtonColor = false, ZIndex = 50}, sg)
         corner(icon, 23)
-        mk("UIStroke", {Color = C.fg, Thickness = 1.5}, icon)
+        -- Border mode: the default (Contextual) stroked the letters instead and made them blurry (owner: hard to read).
+        mk("UIStroke", {Color = C.fg, Thickness = 1.5, ApplyStrokeMode = Enum.ApplyStrokeMode.Border}, icon)
         local ip0, moved
         dragger(icon, function() ip0, moved = icon.Position, false end, function(dx, dy)
             if math.abs(dx) + math.abs(dy) > 8 then moved = true end
@@ -338,18 +343,56 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
         corner(tail, 4)
         list.Visible = true
         local rows = {}
+        local function keyOf(pat)
+            for k in pairs(vals) do if type(k) == "string" and k:find(pat) then return k end end
+        end
+        local function flip(pat) local k = keyOf(pat); if k then vals[k] = not vals[k] end end
+        local function small(parent, txt, w, fn)
+            local s = mk("TextButton", {Size = UDim2.new(0, w, 0, 22), BackgroundColor3 = C.row, BorderSizePixel = 0, Text = txt,
+                TextColor3 = C.fg, Font = Enum.Font.GothamBold, TextSize = 12, AutoButtonColor = false, ZIndex = 50}, parent)
+            corner(s, 4)
+            if fn then on(s.MouseButton1Click, fn) end
+            return s
+        end
+        local function stepSpeed(d)
+            vals.move_speed = math.clamp(math.floor(((tonumber(vals.move_speed) or 30) + d) * 10 + 0.5) / 10, 16, 120)
+        end
+        -- Owner: a ">" beside a row opens a side panel (Speed: +/- 0.1 and 1; Kill Aura: its guide circles).
+        local sides = {
+            Speed = function(f)
+                small(f, "-1", 26, function() stepSpeed(-1) end)
+                small(f, "-.1", 26, function() stepSpeed(-0.1) end)
+                local v = small(f, "", 40)
+                small(f, "+.1", 26, function() stepSpeed(0.1) end)
+                small(f, "+1", 26, function() stepSpeed(1) end)
+                return function() v.Text = string.format("%.1f", tonumber(vals.move_speed) or 30) end
+            end,
+            ["Kill Aura"] = function(f)
+                local g = small(f, "Guide", 50, function() flip("^hbx_auraGuide_") end)
+                return function() local k = keyOf("^hbx_auraGuide_"); g.BackgroundColor3 = k and vals[k] and C.accent or C.row end
+            end,
+        }
         for i, q in ipairs({{"Speed", "^move_speedOn$"}, {"Noclip", "^move_noclip$"}, {"Kill Aura", "^hbx_killOn_"},
-                {"Auto Loot", "^apoc_on_"}}) do
+                {"Auto Loot", "^apoc_on_"}, {"ESP", "^apoc_espOn_"}}) do
             local b = mk("TextButton", {Size = UDim2.new(1, 0, 0, 22), BackgroundColor3 = C.row, BorderSizePixel = 0, LayoutOrder = i,
                 Text = q[1], TextColor3 = C.fg, Font = Enum.Font.GothamBold, TextSize = 12, AutoButtonColor = false, ZIndex = 50,
                 Visible = false}, list)
             corner(b, 4)
-            rows[#rows + 1] = {b = b, pat = q[2]}
-            on(b.MouseButton1Click, function()
-                for k in pairs(vals) do
-                    if type(k) == "string" and k:find(q[2]) then vals[k] = not vals[k]; break end
-                end
-            end)
+            local r = {b = b, pat = q[2]}
+            rows[#rows + 1] = r
+            on(b.MouseButton1Click, function() flip(q[2]) end)
+            if sides[q[1]] then
+                local f = mk("Frame", {Position = UDim2.new(1, 24, 0, 0), Size = UDim2.new(0, 0, 0, 22), AutomaticSize = Enum.AutomaticSize.X,
+                    BackgroundTransparency = 1, Visible = false}, b)
+                mk("UIListLayout", {FillDirection = Enum.FillDirection.Horizontal, SortOrder = Enum.SortOrder.LayoutOrder,
+                    Padding = UDim.new(0, 2)}, f)
+                local arrow = mk("TextButton", {Size = UDim2.new(0, 20, 0, 22), Position = UDim2.new(1, 2, 0, 0), BackgroundColor3 = C.row,
+                    BorderSizePixel = 0, Text = ">", TextColor3 = C.fg, Font = Enum.Font.GothamBold, TextSize = 13,
+                    AutoButtonColor = false, ZIndex = 50}, b)
+                corner(arrow, 4)
+                on(arrow.MouseButton1Click, function() f.Visible = not f.Visible; arrow.Text = f.Visible and "<" or ">" end)
+                r.refresh = sides[q[1]](f)
+            end
         end
         local open = false
         on(tail.MouseButton1Click, function()
@@ -360,10 +403,10 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
         on(RS.Heartbeat, function()
             if not open then return end
             for _, r in ipairs(rows) do
-                local k
-                for key in pairs(vals) do if type(key) == "string" and key:find(r.pat) then k = key; break end end
+                local k = keyOf(r.pat)
                 r.b.Visible = k ~= nil
                 r.b.BackgroundColor3 = k and vals[k] and C.accent or C.row
+                if r.refresh and k then r.refresh() end
             end
         end)
         local cols = {}
@@ -424,7 +467,7 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
                 w.Parent = col
                 W[key] = w
             end
-            w.LayoutOrder, w.Visible = order, true
+            w.LayoutOrder, w.Visible = order, not curCollapsed
             lastW = w
             return w, fresh
         end
@@ -467,8 +510,14 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
             local col = cols[side] or cols.Left
             local sec, n = {}, 0
             local function nextKey(kind) n = n + 1; return kind .. ":" .. sname .. ":" .. n end
-            widget("TextLabel", "sec:" .. sname, col, {Font = Enum.Font.GothamBold, TextSize = 15, TextColor3 = C.accent,
-                BackgroundTransparency = 1}).Text = sname
+            curCollapsed = false
+            local hb, hfresh = widget("TextButton", "sec:" .. sname, col, {Font = Enum.Font.GothamBold, TextSize = 15,
+                TextColor3 = C.accent, BackgroundTransparency = 1})
+            if hfresh then
+                on(hb.MouseButton1Click, function() collapsed[sname] = not collapsed[sname] or nil; saveLayout() end)
+            end
+            hb.Text = (collapsed[sname] and "+  " or "-  ") .. sname
+            curCollapsed = collapsed[sname] == true
             if names then
                 pages[sname] = math.clamp(pages[sname] or 0, 0, #names - 1)
                 sec.page = pages[sname]
@@ -624,7 +673,7 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
         task.spawn(function()
             local logged = false
             while t.alive do
-                order, seen = 0, {}
+                order, seen, curCollapsed = 0, {}, false
                 local ok, err = pcall(draw, tabObj)
                 if ok then ok, err = pcall(moveMenu, tabObj) end
                 if not ok and not logged then logged = true; log("Menu draw error: " .. tostring(err)) end
@@ -2505,7 +2554,7 @@ local function startApocHelper()
 -- Found in the game's ItemInteractClient / BackpackClient (dump\9098570654). AdjustBackpack with nil = UNSTORE (drops
 -- the bag's contents), so it is only ever called with an item. Log: C:\matcha\workspace\apoc_log.txt.
 -- Notes for Claude: D:\NPCHitBoxExpander\Documentation.md.
-local VERSION = "2026-11-25v"  -- bump on every edit so the log shows which copy ran
+local VERSION = "2026-11-25zg"  -- bump on every edit so the log shows which copy ran
 local GAME_ID = 9098570654
 
 local Players     = game:GetService("Players")
@@ -2594,6 +2643,9 @@ local cfg = {
     espColor = {},                 -- ESP kind key -> {r, g, b} (0-1) picked in the menu; none = the kind's default
     espDist = 300,
     badge   = "",                  -- lobby: badge to show off (name as in the Badges menu), "" = leave it alone
+    farmMode  = 0,                 -- Auto Farm game mode: 0 = Endless (normal map: later)
+    farmMin   = 91,                -- Auto Farm: leave for the lobby after this many minutes on the pad (owner: 91)
+    autoFarm  = false,             -- executor copy: Endless solo farm (Auto Farm below); remembered across teleports
     joinMode  = 0,                 -- lobby Auto Join: 0 off, 1 create my own room, 2 join others' rooms
     partySize = 1,                 -- lobby: party size set on a room the script created (1-5)
     joinMin   = 1,                 -- lobby, join others: only join rooms that already have at least this many players
@@ -2608,7 +2660,7 @@ local SETTINGS_FILE = "SurviveTheApocalypse/pickup_settings.json"
 -- v-16d (owner: Auto Pickup is always off after a restart): "enabled" is not saved, so every start is ON. Logs
 -- game41/43: only "enabled" flipped to false mid-game (L key or the toggle), and that saved "off" carried over.
 local SAVED_KEYS    = {"range", "pick", "extra", "fuel", "scrap", "batt", "battPack", "food", "armor", "weapon", "bagUp", "crates", "espOn", "esp", "espColor", "espDist", "badge",
-    "joinMode", "partySize", "joinMin", "leaveAt", "hotkey", "mask", "fuelStopDay", "weaponBag", "mreBag2", "goodScrap", "espAmmo", "espVehicle", "crateMinTier", "antiAfk"}
+    "joinMode", "partySize", "joinMin", "leaveAt", "hotkey", "mask", "fuelStopDay", "weaponBag", "mreBag2", "goodScrap", "espAmmo", "espVehicle", "crateMinTier", "antiAfk", "autoFarm", "farmMode", "farmMin"}
 do
     local ok, data = pcall(function()
         return isfile(SETTINGS_FILE) and HttpService:JSONDecode(readfile(SETTINGS_FILE))
@@ -4116,10 +4168,25 @@ local function findTeleporters()
     end
     log("Lobby: Eternal Night portal found (" .. #tpParts .. " parts)")
 end
+local farmTravelAt = 0
 local function lobbyStep()
     local now = os.clock()
     if now - lobbyTime < 1.0 then return end
     lobbyTime = now
+    -- Auto Farm (owner 2026-11-25): normal lobby -> Endless lobby (portal remote), there a solo room (Auto Join 1, size 1).
+    local farm = EXEC_COPY and cfg.autoFarm
+    local jm, ps = farm and 1 or cfg.joinMode, farm and 1 or cfg.partySize
+    if farm and game.PlaceId == 90148635862803 then
+        lobbyStatus = "Auto Farm: going to the Endless lobby"
+        if now >= farmTravelAt then
+            farmTravelAt = now + 15
+            task.spawn(function()
+                local ok, err = pcall(function() return remote("Misc", "EternalNightTravel"):InvokeServer() end)
+                say("Auto Farm: Endless travel sent (" .. (ok and "ok" or tostring(err)) .. ")")
+            end)
+        end
+        return
+    end
     if not badgesLoaded then
         loadBadges()
         -- Owner 2026-11-04 17:33: stuck on "loading the badge list". After 10 s show the saved badge alone (keeps
@@ -4173,18 +4240,18 @@ local function lobbyStep()
         pcall(function() UI.RemoveTab("Apocalypse") end)
         return
     end
-    if cfg.joinMode == 0 or not IS_PRO then
+    if jm == 0 or not IS_PRO then
         lobbyStatus = "Auto Join: off" .. (mine and (" (in " .. where .. ")") or "")
         return
     end
 
     if mine then
         lobbyStatus = "In " .. where
-        if cfg.joinMode == 1 then
+        if jm == 1 then
             if mine.status == "Creating..." and sizeSentFor ~= mine.name then
                 sizeSentFor = mine.name
-                if lobbyCall("SetPartySize", cfg.partySize) then
-                    say("Lobby: created room " .. mine.name .. ", party size " .. cfg.partySize)
+                if lobbyCall("SetPartySize", ps) then
+                    say("Lobby: created room " .. mine.name .. ", party size " .. ps)
                 end
             end
         -- Join others: leave when too few players are left, or when the room emptied and we became its creator.
@@ -4200,7 +4267,7 @@ local function lobbyStep()
 
     if now < nextJoin then return end
     local pick
-    if cfg.joinMode == 1 then
+    if jm == 1 then
         for _, r in ipairs(rooms) do
             if r.n == 0 and r.status == "Start Game" then pick = r; break end
         end
@@ -4284,6 +4351,14 @@ local function drawMenu(tab)
         names[#names+1] = "Main"
         if IS_PRO then names[#names+1] = "Items" end
         names[#names+1] = "ESP"
+        -- Owner 2026-11-25: Auto Farm has its own (foldable) section with its settings. Executor copy only.
+        if EXEC_COPY and IS_PRO then
+            local fs = tab:Section("Auto Farm", "Right")
+            fs:Toggle(id("farm"), "Auto Farm (Endless solo: loot until a Healing Pad crafts, place it at the map edge,"
+                .. " stay, back to lobby on a horde or the time below, repeat)", cfg.autoFarm)
+            fs:Combo(id("farmMode"), "Game mode (normal map: coming later)", {"Endless"}, cfg.farmMode)
+            fs:SliderInt(id("farmMin"), "Leave after (minutes on the pad)", 5, 180, cfg.farmMin)
+        end
         local sec = tab:Section(LOBBY and "Lobby" or "Auto Pickup", "Right", names)
         -- sec.page = 0-based index of the shown page; nil (no pages) shows all.
         local page = sec.page and names[sec.page + 1]
@@ -4333,6 +4408,14 @@ local function drawMenu(tab)
                 if not okS then alert("Scan failed: " .. tostring(e)) end
             end)
         end)
+        -- Owner 2026-11-25: back to the lobby of this mode (Endless match -> Endless lobby, else the normal lobby).
+        if EXEC_COPY and not LOBBY then
+            sec:Button("Teleport to Lobby", function()
+                local to = game.PlaceId == 80541014082159 and 80046280333935 or 90148635862803
+                log("Teleport to Lobby button: place " .. to)
+                pcall(function() game:GetService("TeleportService"):Teleport(to, LocalPlayer) end)
+            end)
+        end
     end)
     if not ok and not menuErrorShown then
         menuErrorShown = true
@@ -4369,6 +4452,9 @@ local function readMenu()
         cfg.enabled = false; pcall(UI.SetValue, id("on"), false); needsPro("Auto Pickup")
     end
     v = UI.GetValue(id("antiAfk"));     if type(v) == "boolean" then cfg.antiAfk = v end
+    v = UI.GetValue(id("farm"));        if type(v) == "boolean" then cfg.autoFarm = v end
+    v = UI.GetValue(id("farmMode"));    if type(v) == "number" then cfg.farmMode = v end
+    v = UI.GetValue(id("farmMin"));     if type(v) == "number" then cfg.farmMin = v end
     v = UI.GetValue(id("range"));       if type(v) == "number" then cfg.range = v end
     v = UI.GetValue(id("fuel"));        if type(v) == "boolean" then cfg.fuel = v end
     v = UI.GetValue(id("mask"));        if type(v) == "boolean" then cfg.mask = v end
@@ -4532,6 +4618,409 @@ task.spawn(function()
     end
 end)
 
+-- ===== Auto Farm (executor copy, owner 2026-11-25) ===========================
+-- Endless match: walk to scrap / batteries (Auto Pickup claims them) and try Craft "Healing Pad" every few seconds until
+-- it is in hand, walk to the map edge, place the pad (remotes from the owner's Remote Spy), stand on it 90 min, then
+-- teleport back to the normal lobby; the lobby part goes to Endless and makes a solo room again. Walking only
+-- (Humanoid:MoveTo in straight lines), never a position teleport.
+-- Owner: while it runs it keeps Speed, Noclip and "through the map border" on, Kill Aura on, Heavy Revolver in hand.
+-- Map (game20, v-25y): MapRadius 29 tiles; the owner's pad was at 560, 1824, so the map is a SQUARE of tiles (60 studs)
+-- centred on 0,0: edge at |x| or |z| = (MapRadius + 0.5) * 60. Far ground is not loaded (streaming), so the edge walk
+-- goes 30 studs at a time and stops where the next step has no ground under it.
+if EXEC_COPY and not LOBBY then task.spawn(function()
+    local PAD, GUN, LOBBY_PLACE = "Healing Pad", "Heavy Revolver", 90148635862803
+    local placing = false  -- the pad is in hand on purpose: do not swap the revolver back in
+    local function active() return _G.APOC_RUN == RUN and cfg.autoFarm and attr(workspace, "EternalNight") == true end
+    local function body()
+        local ch = LocalPlayer.Character
+        local hum, hrp = ch and ch:FindFirstChildOfClass("Humanoid"), ch and ch:FindFirstChild("HumanoidRootPart")
+        if hum and hum.Health > 0 and hrp then return ch, hum, hrp end
+    end
+    local function padTool()
+        local ch = LocalPlayer.Character
+        local bp = LocalPlayer:FindFirstChild("Backpack")
+        return (ch and ch:FindFirstChild(PAD)) or (bp and bp:FindFirstChild(PAD))
+    end
+    local function flat(v) return Vector3.new(v.X, 0, v.Z) end
+    local function edgeHalf() return ((tonumber(attr(workspace, "MapRadius")) or 0) + 0.5) * 60 end
+    local function where(p)
+        local h = edgeHalf()
+        return fmt(p.X) .. ", " .. fmt(p.Y) .. ", " .. fmt(p.Z) .. " (" .. fmt(h - math.max(math.abs(p.X), math.abs(p.Z)))
+            .. " studs inside the edge)"
+    end
+    local rp = RaycastParams.new()
+    rp.FilterType = Enum.RaycastFilterType.Exclude
+    local function ground(pos)  -- ground hit under pos, ignoring you and the border walls
+        local map = workspace:FindFirstChild("Map")
+        local ch = LocalPlayer.Character
+        rp.FilterDescendantsInstances = {ch or workspace.Terrain, map and map:FindFirstChild("Border") or workspace.Terrain}
+        return workspace:Raycast(Vector3.new(pos.X, pos.Y + 60, pos.Z), Vector3.new(0, -160, 0), rp)
+    end
+
+    -- Scan log (owner: where do the scrap / battery counts live, how does the script know it is at the edge).
+    -- Remove once the counts are found and the edge works.
+    local function scan()
+        log("Auto Farm scan: workspace" .. attrs(workspace))
+        log("Auto Farm scan: player" .. attrs(LocalPlayer))
+        log("Auto Farm scan: character" .. attrs(LocalPlayer.Character or workspace))
+        for _, c in ipairs(LocalPlayer:GetChildren()) do
+            if c.Name ~= "PlayerGui" and c.Name ~= "PlayerScripts" then
+                local kids = {}
+                for i, k in ipairs(c:GetChildren()) do
+                    if i > 30 then kids[#kids + 1] = "..."; break end
+                    local okV, v = pcall(function() return k.Value end)
+                    kids[#kids + 1] = k.Name .. (okV and v ~= nil and ("=" .. tostring(v)) or "") .. attrs(k)
+                end
+                log("Auto Farm scan: player." .. c.Name .. " (" .. c.ClassName .. ")" .. attrs(c) .. ": " .. table.concat(kids, ", "))
+            end
+        end
+        local n = 0
+        local okG, gui = pcall(function() return LocalPlayer.PlayerGui:GetDescendants() end)
+        for _, d in ipairs(okG and gui or {}) do
+            if n >= 40 then break end
+            if d:IsA("TextLabel") or d:IsA("TextButton") then
+                local t, path = tostring(d.Text), d:GetFullName()
+                local low = string.lower(path .. " " .. t)
+                if string.find(low, "scrap", 1, true) or string.find(low, "batter", 1, true) or string.find(low, "resource", 1, true) then
+                    n = n + 1
+                    log("Auto Farm scan: gui " .. path .. " = \"" .. t .. "\"")
+                end
+            end
+        end
+        local map = workspace:FindFirstChild("Map")
+        local b = map and map:FindFirstChild("Border")
+        local m = 0
+        for _, p in ipairs(b and b:GetDescendants() or {}) do
+            if p:IsA("BasePart") and m < 20 then
+                m = m + 1
+                log("Auto Farm scan: border " .. p:GetFullName() .. " at " .. fmt(p.Position.X) .. ", " .. fmt(p.Position.Y) .. ", "
+                    .. fmt(p.Position.Z) .. " size " .. fmt(p.Size.X) .. " x " .. fmt(p.Size.Y) .. " x " .. fmt(p.Size.Z))
+            end
+        end
+        log("Auto Farm scan: " .. (b and (m .. " border parts logged") or "no workspace.Map.Border"))
+    end
+
+    -- v-25zc fell under the map (y -103) with Noclip on all the time: now Noclip only for the edge walk and the
+    -- straight-line fallback; the border parts alone stay passable (move_border).
+    local noclipNow = false
+    local function gear(ch, hum)
+        for _, k in ipairs({"move_speedOn", "move_border"}) do pcall(UI.SetValue, k, true) end
+        pcall(UI.SetValue, "move_noclip", noclipNow)
+        if _G.HBX_RUN then pcall(UI.SetValue, "hbx_killOn_" .. tostring(_G.HBX_RUN), true) end
+        local bp = LocalPlayer:FindFirstChild("Backpack")
+        local gun = bp and bp:FindFirstChild(GUN)
+        if not placing and gun and not ch:FindFirstChild(GUN) then pcall(function() hum:EquipTool(gun) end) end
+    end
+    -- One leg of a walk; jumps when stuck for a second. True when within 3 studs (flat).
+    local stuckLogged = 0
+    local function leg(pos, untilT)
+        local lastPos, lastT, stuckFor = nil, os.clock(), 0
+        while active() and os.clock() < untilT do
+            local ch, hum, hrp = body()
+            if not hum then return false end
+            gear(ch, hum)
+            if flat(pos - hrp.Position).Magnitude < 3 then return true end
+            hum:MoveTo(pos)
+            if not lastPos or (hrp.Position - lastPos).Magnitude > 1 then lastPos, lastT, stuckFor = hrp.Position, os.clock(), 0
+            elseif os.clock() - lastT > 1 then
+                hum.Jump, lastT, stuckFor = true, os.clock(), stuckFor + 1
+                if stuckFor == 3 and stuckLogged < 30 then
+                    stuckLogged = stuckLogged + 1
+                    log("Auto Farm: stuck 3 s at " .. where(hrp.Position) .. ", walking to " .. fmt(pos.X) .. ", " .. fmt(pos.Z)
+                        .. " (WalkSpeed " .. fmt(hum.WalkSpeed) .. ")")
+                end
+            end
+            task.wait(0.2)
+        end
+        return false
+    end
+    -- Owner (v-25zb): walking straight into buildings / fences kept it bumping back and forth. Now Roblox pathfinding
+    -- around them; a waypoint not reached in 3 s makes a new path (5 tries), then a straight walk (Noclip) as last resort.
+    local PFS = game:GetService("PathfindingService")
+    local function pathTo(from, to)
+        local pts
+        pcall(function()
+            local path = PFS:CreatePath({AgentRadius = 2, AgentHeight = 5, AgentCanJump = true, WaypointSpacing = 6})
+            path:ComputeAsync(from, to)
+            if path.Status == Enum.PathStatus.Success then pts = path:GetWaypoints() end
+        end)
+        return pts
+    end
+    local function go(pos, secs)
+        local untilT = os.clock() + secs
+        for _ = 1, 5 do
+            local _, _, hrp = body()
+            if not hrp or not active() or os.clock() >= untilT then break end
+            if flat(pos - hrp.Position).Magnitude < 4 then return true end
+            local pts = pathTo(hrp.Position, pos)
+            if not pts then break end
+            local done = true
+            for _, w in ipairs(pts) do
+                local _, hum = body()
+                if hum and w.Action == Enum.PathWaypointAction.Jump then hum.Jump = true end
+                if not leg(w.Position, math.min(untilT, os.clock() + 3)) then done = false; break end
+            end
+            if done then break end
+        end
+        local was = noclipNow
+        noclipNow = true
+        leg(pos, untilT)  -- no path, or 5 paths failed: straight line through walls
+        noclipNow = was
+        local _, _, h2 = body()
+        return h2 ~= nil and flat(pos - h2.Position).Magnitude < 4
+    end
+    -- Tile under a point (workspace.Map.Tiles.<name>). Zombie spawn log v-24m: ~87% on road tiles (StraightRoad,
+    -- Corner, TSection), some Market, almost none on filler tiles: the pad goes on a non-road tile.
+    local function tileUnder(pos)
+        local map = workspace:FindFirstChild("Map")
+        local tiles = map and map:FindFirstChild("Tiles")
+        if not tiles then return nil end
+        local mp = RaycastParams.new()
+        mp.FilterType, mp.FilterDescendantsInstances = Enum.RaycastFilterType.Include, {tiles}
+        local hit = workspace:Raycast(pos + Vector3.new(0, 5, 0), Vector3.new(0, -30, 0), mp)
+        local inst = hit and hit.Instance
+        while inst and inst.Parent ~= tiles do inst = inst.Parent end
+        return inst and inst.Name
+    end
+    local function isRoad(name)
+        local n = string.lower(tostring(name))
+        for _, w in ipairs({"road", "corner", "tsection", "straight", "market", "intersection", "cross"}) do
+            if string.find(n, w, 1, true) then return true end
+        end
+        return false
+    end
+    -- Walk out to the nearest edge in 30-stud steps; stop 30 studs past it or where the next step has no ground.
+    local function toEdge()
+        local _, _, hrp = body()
+        if not hrp then return false, "no character" end
+        local h = edgeHalf()
+        if h <= 30 then return false, "no MapRadius" end
+        local p = hrp.Position
+        local onX = math.abs(p.X) >= math.abs(p.Z)
+        local step = onX and Vector3.new(p.X >= 0 and 30 or -30, 0, 0) or Vector3.new(0, 0, p.Z >= 0 and 30 or -30)
+        local untilT = os.clock() + 300
+        while active() and os.clock() < untilT do
+            local _, _, r = body()
+            if not r then return false, "died" end
+            local c = r.Position
+            if math.max(math.abs(c.X), math.abs(c.Z)) >= h + 30 then return true, "30 studs past the edge" end
+            local nxt = c + step
+            if not ground(nxt) then return true, "no ground 30 studs further" end
+            if not go(nxt, 30) then return false, "could not walk the next 30 studs" end
+        end
+        return false, "timed out"
+    end
+
+    -- Find-out (owner): log the game's OWN PlaceStructure call when a pad is placed by hand, to copy what works.
+    -- The hook is installed once per game session; each run points _G.APOC_PLACE_LOG at its own log.
+    _G.APOC_PLACE_LOG = log
+    if not _G.APOC_PLACE_HOOK and type(hookmetamethod) == "function" and type(getnamecallmethod) == "function" then
+        _G.APOC_PLACE_HOOK = true
+        pcall(function()
+            local old
+            old = hookmetamethod(game, "__namecall", function(self, ...)
+                if getnamecallmethod() == "InvokeServer" and not (checkcaller and checkcaller()) then
+                    local okN, n = pcall(function() return self.Name end)
+                    if okN and n == "PlaceStructure" then
+                        local a = {...}
+                        task.spawn(function()
+                            local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                            pcall(_G.APOC_PLACE_LOG, "Auto Farm: GAME placed: " .. tostring(a[1] and a[1]:GetFullName()) .. " | "
+                                .. tostring(a[2]) .. " | " .. tostring(a[3]) .. " | you at " .. tostring(hrp and hrp.Position))
+                        end)
+                    end
+                end
+                return old(self, ...)
+            end)
+        end)
+    end
+    local skipUntil, lastHave, leaving = {}, nil, false  -- item -> time it is left alone until
+    local placedAt, padPos, lastCraft, craftAt, lastState, scanned, fails, statusAt = nil, nil, nil, 0, nil, false, 0, 0
+    while _G.APOC_RUN == RUN do
+        task.wait(1)
+        local ch, hum, hrp = body()
+        local act = active()
+        local state = not cfg.autoFarm and "off" or attr(workspace, "EternalNight") ~= true and "not Endless"
+            or not hum and "no character" or placedAt and "on the pad" or padTool() and "pad in hand" or "looting"
+        if state ~= lastState then
+            lastState = state
+            log("Auto Farm: state " .. state .. (hrp and (" at " .. where(hrp.Position)) or ""))
+        end
+        -- Owner (v-25zd): at the timer's 00:00 a horde comes (15-20 zombies, 100+ strong ones at 60 min). Horde
+        -- zombies carry attribute Horde = true (scan v-14k): 3 or more seen = leave for the lobby and start over.
+        if act and hum and not leaving then
+            local chars, horde = workspace:FindFirstChild("Characters"), 0
+            for _, z in ipairs(chars and chars:GetChildren() or {}) do
+                if attr(z, "Horde") == true then horde = horde + 1 end
+            end
+            if horde >= 3 then
+                leaving = true
+                log("Auto Farm: horde seen (" .. horde .. " horde zombies), teleporting to the lobby to start over")
+                pcall(function() game:GetService("TeleportService"):Teleport(LOBBY_PLACE, LocalPlayer) end)
+            end
+        end
+        if leaving then act = false end
+        if act and hum then
+            if not scanned then scanned = true; pcall(scan) end
+            gear(ch, hum)
+            if os.clock() >= statusAt then
+                statusAt = os.clock() + 60
+                log("Auto Farm: status " .. state .. " at " .. where(hrp.Position) .. ", holding "
+                    .. tostring((ch:FindFirstChildOfClass("Tool") or {}).Name))
+            end
+            -- Owner (v-25ze): Execute again walked away from the placed pad and made a new one. A new run first looks
+            -- for a placed Healing Pad (workspace.Structures; solo, so it is yours) and goes back on it.
+            -- shortcut: the 90 min count starts again from this run; keep the place time in a file if that matters.
+            if not placedAt and not padTool() then
+                local st = workspace:FindFirstChild("Structures")
+                for _, m in ipairs(st and st:GetChildren() or {}) do
+                    if m.Name == PAD then
+                        local okP, piv = pcall(function() return m:GetPivot().Position end)
+                        if okP and piv then
+                            placedAt, padPos = os.clock(), piv
+                            log("Auto Farm: found my placed pad at " .. where(piv) .. ", going back on it")
+                            break
+                        end
+                    end
+                end
+            end
+            if not placedAt and not padTool() then
+                -- Phase 1: loot (Auto Pickup with scrap + batteries on) and try to craft.
+                for _, k in ipairs({"on", "scrap", "batt"}) do pcall(UI.SetValue, id(k), true) end
+                noclipNow = false
+                -- Owner: Healing Pad = 60 scrap + 4 batteries. The totals are workspace attributes Scrap / Batteries
+                -- (scan v-25z); only what is still missing is walked to, and Craft is sent once both are enough.
+                local sc, bt = tonumber(attr(workspace, "Scrap")), tonumber(attr(workspace, "Batteries"))
+                local needScrap, needBatt = not sc or sc < 60, not bt or bt < 4
+                local have = "scrap " .. tostring(sc) .. "/60, batteries " .. tostring(bt) .. "/4"
+                if have ~= lastHave then lastHave = have; log("Auto Farm: have " .. have) end
+                if os.clock() >= craftAt and (not sc or not bt or not (needScrap or needBatt)) then
+                    craftAt = os.clock() + 5
+                    local okC, res = pcall(function() return remote("Crafting", "Craft"):InvokeServer(PAD) end)
+                    local r = tostring(okC) .. " " .. tostring(res)
+                    if r ~= lastCraft then lastCraft = r; log("Auto Farm: craft " .. PAD .. " -> " .. r) end
+                end
+                if not padTool() and (needScrap or needBatt) then
+                    local folder, best, bestD = workspace:FindFirstChild("DroppedItems"), nil, math.huge
+                    local masked = attr(ch, "WearingGasMask") == true
+                    local bestIt
+                    for _, it in ipairs(folder and folder:GetChildren() or {}) do
+                        local n = string.lower(it.Name)
+                        local batt = string.find(n, "battery", 1, true) ~= nil
+                        if itemInfo(it).type == "Resource" and (batt and needBatt or not batt and needScrap)
+                            and not (skipUntil[it] and os.clock() < skipUntil[it]) then
+                            local p = itemPart(it)
+                            local pos = p and partPos(p)
+                            if pos and (pos - hrp.Position).Magnitude < bestD then best, bestD, bestIt = pos, (pos - hrp.Position).Magnitude, it end
+                        end
+                    end
+                    -- Owner: died in the radioactive zone. Items on a nuclear / reactor / radio tile are skipped without a mask.
+                    local tile = best and tileUnder(best)
+                    if best and not masked and tile and (string.find(string.lower(tile), "nuclear", 1, true)
+                            or string.find(string.lower(tile), "reactor", 1, true) or string.find(string.lower(tile), "radio", 1, true)) then
+                        skipUntil[bestIt] = os.clock() + 600
+                        log("Auto Farm: skipped " .. bestIt.Name .. " on tile " .. tile .. " (radioactive, no gas mask)")
+                    elseif best then
+                        -- Owner: it kept walking into a building's small window. Not reached = left alone for 60 s.
+                        if not go(best, 25) then
+                            skipUntil[bestIt] = os.clock() + 60
+                            log("Auto Farm: could not reach " .. bestIt.Name .. " on tile " .. tostring(tile) .. ", skipped 60 s")
+                        end
+                    else
+                        -- nothing seen: walk 80 studs a random way, kept 90 studs inside the edge
+                        local h = edgeHalf() - 90
+                        local a = math.random() * math.pi * 2
+                        local t = hrp.Position + Vector3.new(math.cos(a) * 80, 0, math.sin(a) * 80)
+                        if h > 0 then t = Vector3.new(math.clamp(t.X, -h, h), t.Y, math.clamp(t.Z, -h, h)) end
+                        go(t, 20)
+                    end
+                end
+            elseif not placedAt then
+                -- Phase 2 + 3: walk out to the edge once, then place the pad 5 studs ahead (never in the middle of the map).
+                -- game21: every try 30-60 studs past MapRadius was refused (answer nil, pad kept) and the old retry walked
+                -- back out to the same spot. Now each refused try moves 15 studs back toward the centre (up to 40 tries).
+                local okE, why = true, "moving inward after " .. fails .. " refused tries"
+                if fails == 0 then
+                    log("Auto Farm: pad in hand, walking to the edge from " .. where(hrp.Position))
+                    noclipNow = true  -- through the border wall; off again once the pad is down
+                    okE, why = toEdge()
+                    -- Owner (v-25zb): the pad landed on a road at the edge and zombies kept coming. Step one tile (60
+                    -- studs) along the edge and out again until the tile under you is not a road (12 tries, alternating sides).
+                    for i = 1, 12 do
+                        local _, _, r = body()
+                        if not (okE and r and active()) then break end
+                        local t = tileUnder(r.Position)
+                        log("Auto Farm: edge tile " .. tostring(t) .. (t and isRoad(t) and " (road, moving along the edge)" or " (ok)")
+                            .. " at " .. where(r.Position))
+                        if t and not isRoad(t) then break end
+                        local p = r.Position
+                        local onX = math.abs(p.X) >= math.abs(p.Z)
+                        local out = onX and Vector3.new(p.X >= 0 and 1 or -1, 0, 0) or Vector3.new(0, 0, p.Z >= 0 and 1 or -1)
+                        local side = Vector3.new(out.Z, 0, out.X) * (i % 2 == 1 and i or -i) * 60
+                        go(p + side - out * 40, 60)
+                        okE, why = toEdge()
+                    end
+                elseif fails > 40 then
+                    fails = 0
+                else
+                    local p = hrp.Position
+                    local inward = math.abs(p.X) >= math.abs(p.Z) and Vector3.new(p.X >= 0 and -15 or 15, 0, 0)
+                        or Vector3.new(0, 0, p.Z >= 0 and -15 or 15)
+                    go(p + inward, 10)
+                end
+                ch, hum, hrp = body()
+                log("Auto Farm: edge walk " .. (okE and "done" or "FAILED") .. " (" .. why .. ")" .. (hrp and (" at " .. where(hrp.Position)) or ""))
+                local tool = padTool()
+                if okE and hum and tool then
+                    placing = true
+                    pcall(function() hum:EquipTool(tool) end)
+                    task.wait(1.5)  -- let the game's BlueprintClient start
+                    -- Same as the game's BlueprintClient (saved v-25za): 8 studs ahead of the root part, a ray down 15
+                    -- that only sees workspace.Map, pad exactly ON the hit point, turned like you. In Endless it has no
+                    -- distance limit. v-25z sent hit + 0.63 (and once a zombie's head): every try was refused.
+                    local ahead = (hrp.CFrame * CFrame.new(0, 0, -8)).Position
+                    local mp = RaycastParams.new()
+                    mp.FilterType, mp.FilterDescendantsInstances = Enum.RaycastFilterType.Include, {workspace:FindFirstChild("Map") or workspace}
+                    local hit = workspace:Raycast(ahead, Vector3.new(0, -15, 0), mp)
+                    local cf = CFrame.new(hit and hit.Position or (ahead - Vector3.new(0, 3, 0))) * hrp.CFrame.Rotation
+                    local held = ch:FindFirstChild(PAD)
+                    local okP, res = pcall(function()
+                        return remote("Building", "PlaceStructure"):InvokeServer(held or tool, cf, 1)
+                    end)
+                    task.wait(1)
+                    placing = false
+                    log("Auto Farm: place pad at " .. where(cf.Position) .. " on " .. (hit and hit.Instance:GetFullName() or "no ground")
+                        .. ", held " .. tostring(held ~= nil) .. " -> " .. tostring(okP) .. " " .. tostring(res)
+                        .. ", pad still in hand " .. tostring(padTool() ~= nil))
+                    if not padTool() then
+                        placedAt, padPos, fails, noclipNow = os.clock(), cf.Position, 0, false
+                        go(padPos, 10)
+                    else
+                        fails = fails + 1
+                        -- Find-out: the pad's own placement script, saved once if this executor can decompile.
+                        if fails == 1 and type(decompile) == "function" and not isfile("SurviveTheApocalypse/BlueprintClient.txt") then
+                            local okD, src = pcall(decompile, tool:FindFirstChild("BlueprintClient"))
+                            pcall(writefile, "SurviveTheApocalypse/BlueprintClient.txt", tostring(okD and src or ("decompile failed: " .. tostring(src))))
+                            log("Auto Farm: BlueprintClient source saved (" .. tostring(okD) .. ")")
+                        end
+                        task.wait(1)
+                    end
+                else
+                    task.wait(5)
+                end
+            else
+                -- Phase 4: stay on the pad (walk back after a respawn), then back to the lobby.
+                if flat(padPos - hrp.Position).Magnitude > 4 then go(padPos, 60) end
+                if os.clock() - placedAt >= (tonumber(cfg.farmMin) or 91) * 60 then
+                    log("Auto Farm: " .. tostring(cfg.farmMin) .. " min done, teleporting to the lobby")
+                    pcall(function() game:GetService("TeleportService"):Teleport(LOBBY_PLACE, LocalPlayer) end)
+                    task.wait(30)
+                end
+            end
+        end
+    end
+end) end
+
 -- ===== Main loop =============================================================
 if not LOBBY and not remote("Interaction", "PickUpItem") then alert("PickUpItem remote not found (game update?)") end
 local lastError = nil
@@ -4602,8 +5091,11 @@ UI.AddTab("Apocalypse", function(tab)
         sec:Combo(id("part"), "Hitbox Part", PARTS, cfg.partIndex - 1)
         sec:SliderFloat(id("size"), "Hitbox Size", 1, 25, cfg.hitboxSize, "%.1f")
         sec:SliderInt(id("dist"), "Max Distance", 1, 5000, cfg.maxDistance)
+        sec:Toggle(id("fovOn"), "Camera Field Of View", cfg.fovOn)
+        sec:SliderInt(id("fov"), "FOV Amount", 70, 120, cfg.fov)
+        sec:Button("Scan World (debug)", function() task.spawn(function() scanWorld("button") end) end)
         if IS_PRO then  -- Owner 2026-11-18: Kill Aura is Pro-only, hidden on Regular
-            sec:Spacing(); sec:Text("-- Kill Aura --")
+            sec = tab:Section("Kill Aura", "Left")  -- owner 2026-11-25: its own section with its own title
             sec:Toggle(id("killOn"), "Kill Aura (key switches it on/off)", cfg.killOn)
             sec:Combo(id("aimKey"), "Aura key", AIM_KEY_NAMES, aimKeyIndex(cfg.aimKey) - 1)
             sec:Combo(id("aimMode"), "Key mode", AIM_MODES, cfg.aimMode)
@@ -4619,9 +5111,6 @@ UI.AddTab("Apocalypse", function(tab)
             sec:Toggle(id("auraTurret"), "Vehicle turrets (fire your vehicle's turrets)", cfg.auraTurret)
             sec:Text(kill.status)
         end
-        sec:Toggle(id("fovOn"), "Camera Field Of View", cfg.fovOn)
-        sec:SliderInt(id("fov"), "FOV Amount", 70, 120, cfg.fov)
-        sec:Button("Scan World (debug)", function() task.spawn(function() scanWorld("button") end) end)
     end)
     if not ok and not menuErrorShown then
         menuErrorShown = true

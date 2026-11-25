@@ -1,11 +1,11 @@
 local IS_APOC = game.GameId == 9098570654; local Players = game:GetService("Players")
 if not game:IsLoaded() then game.Loaded:Wait() end; while not Players.LocalPlayer do task.wait() end; local LocalPlayer = Players.LocalPlayer
 
--- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-25zzzzzz.
+-- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-25zzzzzzz.
 -- Install: put this file in your executor's autoexec folder or run it in a match. Own menu window: Right Alt hides / shows it. V = Speed, N = Noclip.
 -- Runs only in Survive the Apocalypse. Settings go to the executor's workspace folder. Use at your own risk: it sends the game's own messages (pickup, crates) and the game has an anti-cheat. Vibecoded.
 local NO_LOGS = true  -- true = no log files and no console lines (public copy)
-local VERSION = "aio-2026-11-25zzzzzz"  -- bump on every edit so the log shows which copy ran
+local VERSION = "aio-2026-11-25zzzzzzz"  -- bump on every edit so the log shows which copy ran
 local GAME_ID, LOG_FILE, APOC_DIR = "", "hbx_log.txt", "SurviveTheApocalypse"
 local logDirOk, logDirErr = pcall(function()
     local ok, id = pcall(function() return game.GameId end); if not ok or not id or id == 0 then id = game.PlaceId end
@@ -2561,7 +2561,7 @@ local function startApocHelper()
 -- Found in the game's ItemInteractClient / BackpackClient (dump\9098570654). AdjustBackpack with nil = UNSTORE (drops
 -- the bag's contents), so it is only ever called with an item. Log: C:\matcha\workspace\apoc_log.txt.
 -- Notes for Claude: D:\NPCHitBoxExpander\Documentation.md.
-local VERSION = "2026-11-25zzzzzz"  -- bump on every edit so the log shows which copy ran
+local VERSION = "2026-11-25zzzzzzz"  -- bump on every edit so the log shows which copy ran
 local GAME_ID = 9098570654
 
 local Players     = game:GetService("Players")
@@ -4685,7 +4685,7 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
     local leaving = false  -- set by the leave watcher below; stops every walk
     -- v-25zzzzzz watchdog (friend's screen: "Doing" stayed on "waiting for the Survived timer" at Survived 0:20, so
     -- the farm loop had stopped without an error). Every active() call from the farm loop is a heartbeat; no beat for
-    -- 30 s = that loop is dropped (it stops at its next active() call) and a fresh one starts.
+    -- 12 s = that loop is dropped (it stops at its next active() call) and a fresh one starts.
     local loopThread, beat, oldLoops = nil, os.clock(), {}
     local function active()
         local co = coroutine.running()
@@ -4700,6 +4700,9 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
     end
     -- Owner: the menu shows what Auto Farm is doing now (under "Leaving in").
     local function doing(t) _G.APOC_FARM_DOING = t end
+    -- v-25zzzzzzz (owner: a friend's farm froze, no log on his phone): the loop's current step + when it got there,
+    -- shown on the menu, so a screenshot tells where it hangs.
+    local function step(t) _G.APOC_FARM_STEP, _G.APOC_FARM_STEP_T = t, os.clock() end
     doing("starting")
     local function padTool()
         local ch = LocalPlayer.Character
@@ -5485,6 +5488,7 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
     while _G.APOC_RUN == RUN and not oldLoops[coroutine.running()] do
         task.wait(0.2)  -- was 1 s: a stop after every item (owner: walk-stop-walk-stop)
         local okLoop, errLoop = pcall(function()
+        step("loop start")
         local ch, hum, hrp = body()
         local act = active()
         local state = not cfg.autoFarm and "off" or attr(workspace, "EternalNight") ~= true and "not Endless"
@@ -5498,8 +5502,11 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
             if not leaving then doing(not cfg.autoFarm and "off" or "waiting (not an Endless match)") end
         end  -- your own Speed value again when not farming
         if act and hum then
+            step("scan")
             if not scanned then scanned = true; pcall(scan) end
+            step("gear (speed, noclip, Kill Aura, gun)")
             gear(ch, hum)
+            step("look for a placed pad")
             if os.clock() >= statusAt then
                 statusAt = os.clock() + 60
                 log("Auto Farm: status " .. state .. " at " .. where(hrp.Position) .. ", holding "
@@ -5524,6 +5531,7 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
             -- Owner: start looting / walking only once the Survived timer runs (loot is not loaded before that).
             -- v-25zzzzz (owner: stuck on "waiting" while the timer already ran): backup = start anyway once scrap or a
             -- battery shows in DroppedItems, or after 20 s of waiting.
+            step("Survived timer check")
             local survNow = tonumber(attr(LocalPlayer, "EternalNightSurvived")) or 0
             if survNow > 0 or placedAt or padTool() then
                 timerWaitAt = nil
@@ -5547,9 +5555,11 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
                 doing("waiting for the Survived timer to start (" .. math.floor(20 - (os.clock() - timerWaitAt)) .. " s)")
             elseif not placedAt and not padTool() then
                 -- Phase 1: loot (Auto Pickup with scrap + batteries on) and try to craft.
+                step("loot: Auto Pickup toggles")
                 for _, k in ipairs({"on", "scrap", "batt"}) do pcall(UI.SetValue, id(k), true) end
                 -- Owner (v-25zzzz): loot walks go for scrap and batteries only; guns are taken in passing (gear()).
                 if not padTool() and (needScrap or needBatt) then
+                    step("loot: choose an item")
                     local folder, best, bestD = workspace:FindFirstChild("DroppedItems"), nil, math.huge
                     local masked = attr(ch, "WearingGasMask") == true
                     local bestIt
@@ -5638,6 +5648,7 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
                     end
                 end
             elseif not placedAt then
+                step("pad in hand: edge walk")
                 -- Phase 2 + 3: walk out to the edge once, then place the pad 5 studs ahead (never in the middle of the map).
                 -- game60 plan: out past the round wall, then a flat spot near the cliff 60+ studs from the wall. A refused
                 -- pad = walk 150 studs along the ring and take the next spot (never back inside the wall).
@@ -5760,6 +5771,7 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
                 end
                 onPad = true
                 pcall(buildWall, padPos)
+                step("on the pad")
                 -- Phase 4: stay on the pad (walk back after a respawn), then back to the lobby.
                 if flat(padPos - hrp.Position).Magnitude > 4 then go(padPos, 60) end
             end
@@ -5771,9 +5783,9 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
     task.spawn(function()
         while _G.APOC_RUN == RUN do
             task.wait(5)
-            if os.clock() - beat > 30 then
-                log("Auto Farm: loop stuck 30 s (last: " .. tostring(_G.APOC_FARM_DOING) .. "), starting a fresh one")
-                doing("was stuck, starting again")
+            if os.clock() - beat > 12 then
+                log("Auto Farm: loop stuck 12 s at step " .. tostring(_G.APOC_FARM_STEP) .. " (" .. tostring(_G.APOC_FARM_DOING) .. "), starting a fresh one")
+                doing("was stuck at \"" .. tostring(_G.APOC_FARM_STEP) .. "\", starting again")
                 if loopThread then oldLoops[loopThread] = true end
                 beat = os.clock()
                 task.spawn(farmLoop)

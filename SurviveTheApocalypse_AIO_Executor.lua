@@ -1,11 +1,11 @@
 local IS_APOC = game.GameId == 9098570654; local Players = game:GetService("Players")
 if not game:IsLoaded() then game.Loaded:Wait() end; while not Players.LocalPlayer do task.wait() end; local LocalPlayer = Players.LocalPlayer
 
--- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-25zzzz.
+-- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-25zzzzz.
 -- Install: put this file in your executor's autoexec folder or run it in a match. Own menu window: Right Alt hides / shows it. V = Speed, N = Noclip.
 -- Runs only in Survive the Apocalypse. Settings go to the executor's workspace folder. Use at your own risk: it sends the game's own messages (pickup, crates) and the game has an anti-cheat. Vibecoded.
 local NO_LOGS = true  -- true = no log files and no console lines (public copy)
-local VERSION = "aio-2026-11-25zzzz"  -- bump on every edit so the log shows which copy ran
+local VERSION = "aio-2026-11-25zzzzz"  -- bump on every edit so the log shows which copy ran
 local GAME_ID, LOG_FILE, APOC_DIR = "", "hbx_log.txt", "SurviveTheApocalypse"
 local logDirOk, logDirErr = pcall(function()
     local ok, id = pcall(function() return game.GameId end); if not ok or not id or id == 0 then id = game.PlaceId end
@@ -2561,7 +2561,7 @@ local function startApocHelper()
 -- Found in the game's ItemInteractClient / BackpackClient (dump\9098570654). AdjustBackpack with nil = UNSTORE (drops
 -- the bag's contents), so it is only ever called with an item. Log: C:\matcha\workspace\apoc_log.txt.
 -- Notes for Claude: D:\NPCHitBoxExpander\Documentation.md.
-local VERSION = "2026-11-25zzzz"  -- bump on every edit so the log shows which copy ran
+local VERSION = "2026-11-25zzzzz"  -- bump on every edit so the log shows which copy ran
 local GAME_ID = 9098570654
 
 local Players     = game:GetService("Players")
@@ -5469,7 +5469,7 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
         end
     end)
     local placedAt, padPos, lastCraft, craftAt, lastState, scanned, fails, statusAt = nil, nil, nil, 0, nil, false, 0, 0
-    local padMissing = nil
+    local padMissing, timerWaitAt, timerLogged = nil, nil, false
     while _G.APOC_RUN == RUN do
         task.wait(0.2)  -- was 1 s: a stop after every item (owner: walk-stop-walk-stop)
         local okLoop, errLoop = pcall(function()
@@ -5510,8 +5510,29 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
                 end
             end
             -- Owner: start looting / walking only once the Survived timer runs (loot is not loaded before that).
-            if not placedAt and not padTool() and (tonumber(attr(LocalPlayer, "EternalNightSurvived")) or 0) <= 0 then
-                doing("waiting for the Survived timer to start")
+            -- v-25zzzzz (owner: stuck on "waiting" while the timer already ran): backup = start anyway once scrap or a
+            -- battery shows in DroppedItems, or after 20 s of waiting.
+            local survNow = tonumber(attr(LocalPlayer, "EternalNightSurvived")) or 0
+            if survNow > 0 or placedAt or padTool() then
+                timerWaitAt = nil
+            elseif not timerWaitAt then
+                timerWaitAt = os.clock()
+            end
+            local lootSeen = false
+            if timerWaitAt and os.clock() - timerWaitAt > 2 then
+                local df = workspace:FindFirstChild("DroppedItems")
+                for _, it in ipairs(df and df:GetChildren() or {}) do
+                    if itemInfo(it).type == "Resource" then lootSeen = true; break end
+                end
+            end
+            local timerOk = not timerWaitAt or lootSeen or os.clock() - timerWaitAt > 20
+            if timerWaitAt and timerOk and not timerLogged then
+                timerLogged = true
+                log("Auto Farm: Survived reads " .. tostring(attr(LocalPlayer, "EternalNightSurvived")) .. ", starting anyway ("
+                    .. (lootSeen and "loot is on the ground" or "waited 20 s") .. ")")
+            end
+            if not placedAt and not padTool() and not timerOk then
+                doing("waiting for the Survived timer to start (" .. math.floor(20 - (os.clock() - timerWaitAt)) .. " s)")
             elseif not placedAt and not padTool() then
                 -- Phase 1: loot (Auto Pickup with scrap + batteries on) and try to craft.
                 for _, k in ipairs({"on", "scrap", "batt"}) do pcall(UI.SetValue, id(k), true) end

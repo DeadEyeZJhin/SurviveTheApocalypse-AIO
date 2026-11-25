@@ -1,11 +1,11 @@
 local IS_APOC = game.GameId == 9098570654; local Players = game:GetService("Players")
 if not game:IsLoaded() then game.Loaded:Wait() end; while not Players.LocalPlayer do task.wait() end; local LocalPlayer = Players.LocalPlayer
 
--- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-25zzzzzzzzzzzzzzzzz.
+-- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-25zzzzzzzzzzzzzzzzzz.
 -- Install: put this file in your executor's autoexec folder or run it in a match. Own menu window: Right Alt hides / shows it. V = Speed, N = Noclip.
 -- Runs only in Survive the Apocalypse. Settings go to the executor's workspace folder. Use at your own risk: it sends the game's own messages (pickup, crates) and the game has an anti-cheat. Vibecoded.
 local NO_LOGS = true  -- true = no log files and no console lines (public copy)
-local VERSION = "aio-2026-11-25zzzzzzzzzzzzzzzzz"  -- bump on every edit so the log shows which copy ran
+local VERSION = "aio-2026-11-25zzzzzzzzzzzzzzzzzz"  -- bump on every edit so the log shows which copy ran
 local GAME_ID, LOG_FILE, APOC_DIR = "", "hbx_log.txt", "SurviveTheApocalypse"
 local logDirOk, logDirErr = pcall(function()
     local ok, id = pcall(function() return game.GameId end); if not ok or not id or id == 0 then id = game.PlaceId end
@@ -2451,9 +2451,8 @@ local function meleeStep(tool, now)
     if not h then return end
     local hp = h.Position
     local okRg, rg = pcall(function() return tool.Stats:GetAttribute("Range") end)
-    -- Reach test (game73: a Bloater blew you up from outside the 12-stud reach): zombies up to 30 studs are hit; the hit
-    -- check lines (with distance) tell whether the server takes far hits. shortcut: back to 12 if they never land.
-    local range = math.max((okRg and tonumber(rg)) or 12, 30)
+    -- Reach (game75 hit checks): hits landed up to 18.6 studs, none from 19.9 to 30 (one doubtful at 29.9). 18 studs.
+    local range = math.max((okRg and tonumber(rg)) or 12, 18)
     local list = {}
     for _, f in ipairs(HBX.npcFolders) do
         local okK, kids = pcall(function() return f.folder:GetChildren() end)
@@ -2668,7 +2667,7 @@ local function startApocHelper()
 -- Found in the game's ItemInteractClient / BackpackClient (dump\9098570654). AdjustBackpack with nil = UNSTORE (drops
 -- the bag's contents), so it is only ever called with an item. Log: C:\matcha\workspace\apoc_log.txt.
 -- Notes for Claude: D:\NPCHitBoxExpander\Documentation.md.
-local VERSION = "2026-11-25zzzzzzzzzzzzzzzzz"  -- bump on every edit so the log shows which copy ran
+local VERSION = "2026-11-25zzzzzzzzzzzzzzzzzz"  -- bump on every edit so the log shows which copy ran
 local GAME_ID = 9098570654
 
 local Players     = game:GetService("Players")
@@ -4975,6 +4974,7 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
     -- projectile, the ones Kill Aura cannot shoot), is out of ammo (magazine and reserve 0) or does not reload (magazine
     -- 0 for 10 s in hand) is switched for the next one; "does not reload" is retried after 2 min.
     local gunBad, gunEmpty, gunWas, lastHeld = {}, {}, nil, nil
+    local wantMelee = false  -- breaking a Scrap Pile: hold the melee weapon, not the gun
     local function gunProblem(t)
         local stats = t:FindFirstChild("Stats")
         if not stats or not t:FindFirstChild("Shoot") or attr(stats, "Projectile") then return "does not fire" end
@@ -5031,6 +5031,7 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
                 gunEmpty[held] = nil
             end
         end
+        if wantMelee then held = nil end  -- Kill Aura swings only with no gun in hand
         if held ~= lastHeld then
             if held then log("Auto Farm: holding " .. held.Name .. (lastHeld and (" instead of " .. lastHeld.Name .. " ("
                 .. tostring(lastHeld.Parent and gunProblem(lastHeld) or "gone") .. ")") or "")
@@ -5761,7 +5762,47 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
                     end
                     -- Owner: died in the radioactive zone. Items on a nuclear / reactor / radio tile are skipped without a mask.
                     local tile = best and tileUnder(best)
-                    if best and not masked and hot(best) then
+                    -- Owner (v-25zzzzzzzzzzzzzzzzzz): a Scrap Pile (workspace.Structures) gives 15 scrap when broken, 4 =
+                    -- 60. With scrap still needed, a melee weapon in the bag and no ground scrap / battery within 30
+                    -- studs, the nearest Scrap Pile is walked to (stop 8 studs short) and Kill Aura's melee breaks it;
+                    -- Auto Pickup takes what drops. Not broken in 10 s = left alone 60 s. No pile = ground items.
+                    local pile, pileAt, pileD
+                    if needScrap and (not best or bestD > 30) then
+                        local hasMelee = false
+                        for _, holder in ipairs({ch, LocalPlayer:FindFirstChild("Backpack")}) do
+                            for _, t in ipairs(holder and holder:GetChildren() or {}) do
+                                if t:IsA("Tool") and attr(t, "ToolType") == "Melee" then hasMelee = true end
+                            end
+                        end
+                        local stf = hasMelee and workspace:FindFirstChild("Structures")
+                        for _, m in ipairs(stf and stf:GetChildren() or {}) do
+                            if string.find(string.lower(m.Name), "scrap pile", 1, true)
+                                and not (skipUntil[m] and os.clock() < skipUntil[m]) then
+                                local okP, piv = pcall(function() return m:GetPivot().Position end)
+                                local dd = okP and piv and (piv - hrp.Position).Magnitude
+                                if dd and (not pileD or dd < pileD) and (masked or not hot(piv)) then pile, pileAt, pileD = m, piv, dd end
+                            end
+                        end
+                    end
+                    if pile then
+                        step("loot: break a Scrap Pile")
+                        doing("walking to a Scrap Pile (" .. math.floor(pileD) .. " studs)")
+                        local fl = flat(pileAt - hrp.Position)
+                        local stand = fl.Magnitude > 8 and (pileAt - fl.Unit * 8) or hrp.Position
+                        local sc0 = sc
+                        wantMelee = true
+                        go(Vector3.new(stand.X, hrp.Position.Y, stand.Z), 25)
+                        doing("breaking a Scrap Pile with " .. tostring((ch:FindFirstChildOfClass("Tool") or {}).Name))
+                        local t0 = os.clock()
+                        while pile.Parent and active() and os.clock() - t0 < 10 do gear(ch, hum); task.wait(0.2) end
+                        wantMelee = false
+                        if pile.Parent then
+                            skipUntil[pile] = os.clock() + 60
+                            log("Auto Farm: Scrap Pile at " .. where(pileAt) .. " not broken in 10 s, left alone 60 s")
+                        else
+                            log("Auto Farm: broke a Scrap Pile at " .. where(pileAt) .. " (scrap " .. tostring(sc0) .. " before)")
+                        end
+                    elseif best and not masked and hot(best) then
                         skipUntil[bestIt] = os.clock() + 600
                         log("Auto Farm: skipped " .. bestIt.Name .. " on tile " .. tostring(tile) .. " (near a radiation spot, no gas mask)")
                     elseif best then

@@ -1,11 +1,11 @@
 local IS_APOC = game.GameId == 9098570654; local Players = game:GetService("Players")
 if not game:IsLoaded() then game.Loaded:Wait() end; while not Players.LocalPlayer do task.wait() end; local LocalPlayer = Players.LocalPlayer
 
--- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-25.21.
+-- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-25.22.
 -- Install: put this file in your executor's autoexec folder or run it in a match. Own menu window: Right Alt hides / shows it. V = Speed, N = Noclip.
 -- Runs only in Survive the Apocalypse. Settings go to the executor's workspace folder. Use at your own risk: it sends the game's own messages (pickup, crates) and the game has an anti-cheat. Vibecoded.
 local NO_LOGS = true  -- true = no log files and no console lines (public copy)
-local VERSION = "aio-2026-11-25.21"  -- bump on every edit so the log shows which copy ran
+local VERSION = "aio-2026-11-25.22"  -- bump on every edit so the log shows which copy ran
 local GAME_ID, LOG_FILE, APOC_DIR = "", "hbx_log.txt", "SurviveTheApocalypse"
 local logDirOk, logDirErr = pcall(function()
     local ok, id = pcall(function() return game.GameId end); if not ok or not id or id == 0 then id = game.PlaceId end
@@ -2479,7 +2479,9 @@ local function meleeStep(tool, now)
         for _, m in ipairs(okS and kids or {}) do
             if #targets >= MELEE_MAX then break end
             local okP, piv = pcall(function() return m:GetPivot().Position end)
-            if okP and typeof(piv) == "Vector3" and (piv - hp).Magnitude <= range + 6 then
+            -- game76: a broken Scrap Pile stays as debris; Auto Farm marks the ones it broke (no swinging at air)
+            local broken = _G.APOC_BROKEN and _G.APOC_BROKEN[m]
+            if okP and not broken and typeof(piv) == "Vector3" and (piv - hp).Magnitude <= range + 6 then
                 targets[#targets+1] = m
             end
         end
@@ -2667,7 +2669,7 @@ local function startApocHelper()
 -- Found in the game's ItemInteractClient / BackpackClient (dump\9098570654). AdjustBackpack with nil = UNSTORE (drops
 -- the bag's contents), so it is only ever called with an item. Log: C:\matcha\workspace\apoc_log.txt.
 -- Notes for Claude: D:\NPCHitBoxExpander\Documentation.md.
-local VERSION = "2026-11-25.21"  -- bump on every edit so the log shows which copy ran
+local VERSION = "2026-11-25.22"  -- bump on every edit so the log shows which copy ran
 local GAME_ID = 9098570654
 
 local Players     = game:GetService("Players")
@@ -4974,7 +4976,7 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
     -- projectile, the ones Kill Aura cannot shoot), is out of ammo (magazine and reserve 0) or does not reload (magazine
     -- 0 for 10 s in hand) is switched for the next one; "does not reload" is retried after 2 min.
     local gunBad, gunEmpty, gunWas, lastHeld = {}, {}, nil, nil
-    local wantMelee = false  -- breaking a Scrap Pile: hold the melee weapon, not the gun
+    local wantMelee, pileLogged = false, false  -- breaking a Scrap Pile: hold the melee weapon, not the gun
     local function gunProblem(t)
         local stats = t:FindFirstChild("Stats")
         if not stats or not t:FindFirstChild("Shoot") or attr(stats, "Projectile") then return "does not fire" end
@@ -5793,14 +5795,28 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
                         wantMelee = true
                         go(Vector3.new(stand.X, hrp.Position.Y, stand.Z), 25)
                         doing("breaking a Scrap Pile with " .. tostring((ch:FindFirstChildOfClass("Tool") or {}).Name))
-                        local t0 = os.clock()
-                        while pile.Parent and active() and os.clock() - t0 < 10 do gear(ch, hum); task.wait(0.2) end
+                        -- game76: a broken pile stays in Structures as debris (pile.Parent never nil), so "broken" = your
+                        -- Scrap count went up. Broken piles are never targeted again, also not by Kill Aura's melee.
+                        local t0, attr0 = os.clock(), attrs(pile)
+                        local function scrapNow() return tonumber(attr(workspace, "Scrap")) or 0 end
+                        while pile.Parent and active() and os.clock() - t0 < 10 and scrapNow() <= (sc0 or 0) do
+                            gear(ch, hum); task.wait(0.2)
+                        end
                         wantMelee = false
-                        if pile.Parent then
+                        if pile.Parent and scrapNow() <= (sc0 or 0) then
                             skipUntil[pile] = os.clock() + 60
                             log("Auto Farm: Scrap Pile at " .. where(pileAt) .. " not broken in 10 s, left alone 60 s")
                         else
-                            log("Auto Farm: broke a Scrap Pile at " .. where(pileAt) .. " (scrap " .. tostring(sc0) .. " before)")
+                            skipUntil[pile] = math.huge
+                            _G.APOC_BROKEN = _G.APOC_BROKEN or setmetatable({}, {__mode = "k"})
+                            _G.APOC_BROKEN[pile] = true
+                            log("Auto Farm: broke a Scrap Pile at " .. where(pileAt) .. " in " .. string.format("%.1f", os.clock() - t0)
+                                .. " s (scrap " .. tostring(sc0) .. " -> " .. scrapNow() .. ")")
+                            -- find-out: how the game marks a broken pile (remove once known)
+                            if not pileLogged then
+                                pileLogged = true
+                                task.delay(1, function() log("Auto Farm: Scrap Pile attributes before" .. attr0 .. " | after" .. attrs(pile)) end)
+                            end
                         end
                     elseif best and not masked and hot(best) then
                         skipUntil[bestIt] = os.clock() + 600

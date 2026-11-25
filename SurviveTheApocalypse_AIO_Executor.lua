@@ -1,11 +1,11 @@
 local IS_APOC = game.GameId == 9098570654; local Players = game:GetService("Players")
 if not game:IsLoaded() then game.Loaded:Wait() end; while not Players.LocalPlayer do task.wait() end; local LocalPlayer = Players.LocalPlayer
 
--- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-25zzw.
+-- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-25zzx.
 -- Install: put this file in your executor's autoexec folder or run it in a match. Own menu window: Right Alt hides / shows it. V = Speed, N = Noclip.
 -- Runs only in Survive the Apocalypse. Settings go to the executor's workspace folder. Use at your own risk: it sends the game's own messages (pickup, crates) and the game has an anti-cheat. Vibecoded.
 local NO_LOGS = true  -- true = no log files and no console lines (public copy)
-local VERSION = "aio-2026-11-25zzw"  -- bump on every edit so the log shows which copy ran
+local VERSION = "aio-2026-11-25zzx"  -- bump on every edit so the log shows which copy ran
 local GAME_ID, LOG_FILE, APOC_DIR = "", "hbx_log.txt", "SurviveTheApocalypse"
 local logDirOk, logDirErr = pcall(function()
     local ok, id = pcall(function() return game.GameId end); if not ok or not id or id == 0 then id = game.PlaceId end
@@ -2559,7 +2559,7 @@ local function startApocHelper()
 -- Found in the game's ItemInteractClient / BackpackClient (dump\9098570654). AdjustBackpack with nil = UNSTORE (drops
 -- the bag's contents), so it is only ever called with an item. Log: C:\matcha\workspace\apoc_log.txt.
 -- Notes for Claude: D:\NPCHitBoxExpander\Documentation.md.
-local VERSION = "2026-11-25zzw"  -- bump on every edit so the log shows which copy ran
+local VERSION = "2026-11-25zzx"  -- bump on every edit so the log shows which copy ran
 local GAME_ID = 9098570654
 
 local Players     = game:GetService("Players")
@@ -4810,6 +4810,20 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
     -- v-25zc fell under the map (y -103) with Noclip on all the time: now Noclip only for the edge walk and the
     -- straight-line fallback; the border parts alone stay passable (move_border).
     local noclipNow, onPad, padWall = false, false, nil
+    -- Owner: not everyone has the Heavy Revolver (Outlaw class). Any gun you own (Tool with ToolType "Gun") is held:
+    -- the Heavy Revolver first, else the highest Tier.
+    local function bestGun(ch)
+        local best, bestS
+        for _, holder in ipairs({ch, LocalPlayer:FindFirstChild("Backpack")}) do
+            for _, t in ipairs(holder and holder:GetChildren() or {}) do
+                if t:IsA("Tool") and attr(t, "ToolType") == "Gun" then
+                    local sc = (t.Name == GUN and 100 or 0) + (tonumber(attr(t, "Tier")) or 0)
+                    if not bestS or sc > bestS then best, bestS = t, sc end
+                end
+            end
+        end
+        return best
+    end
     local function gear(ch, hum)
         for _, k in ipairs({"move_speedOn", "move_border"}) do pcall(UI.SetValue, k, true) end
         -- owner: always on while farming; off on the pad so the safety wall at the cliff holds you
@@ -4820,9 +4834,8 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
         local km = tonumber(attr(LocalPlayer, "KM_MAX_PLAYER_SPEED"))
         _G.APOC_SPEED_CAP = km and (km - 0.5) or nil
         if _G.HBX_RUN then pcall(UI.SetValue, "hbx_killOn_" .. tostring(_G.HBX_RUN), true) end
-        local bp = LocalPlayer:FindFirstChild("Backpack")
-        local gun = bp and bp:FindFirstChild(GUN)
-        if not placing and gun and not ch:FindFirstChild(GUN) then pcall(function() hum:EquipTool(gun) end) end
+        local gun = bestGun(ch)
+        if not placing and gun and gun.Parent ~= ch then pcall(function() hum:EquipTool(gun) end) end
     end
     -- One leg of a walk; jumps when stuck for a second. True when within 3 studs (flat).
     local stuckLogged = 0
@@ -5411,7 +5424,7 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
         end
     end)
     local placedAt, padPos, lastCraft, craftAt, lastState, scanned, fails, statusAt = nil, nil, nil, 0, nil, false, 0, 0
-    local padMissing = nil
+    local padMissing, gunWas = nil, nil
     while _G.APOC_RUN == RUN do
         task.wait(0.2)  -- was 1 s: a stop after every item (owner: walk-stop-walk-stop)
         local okLoop, errLoop = pcall(function()
@@ -5457,6 +5470,18 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
             elseif not placedAt and not padTool() then
                 -- Phase 1: loot (Auto Pickup with scrap + batteries on) and try to craft.
                 for _, k in ipairs({"on", "scrap", "batt"}) do pcall(UI.SetValue, id(k), true) end
+                -- Owner: no gun at all = grab one to defend yourself. "Guns (any)" is switched on until you have one,
+                -- then put back the way it was.
+                local needGun = bestGun(ch) == nil
+                if needGun and gunWas == nil then
+                    gunWas = UI.GetValue(id("pick_gun")) == true
+                    pcall(UI.SetValue, id("pick_gun"), true)
+                    log("Auto Farm: you have no gun, taking the first one found")
+                elseif not needGun and gunWas ~= nil then
+                    pcall(UI.SetValue, id("pick_gun"), gunWas)
+                    log("Auto Farm: got a gun (" .. tostring((bestGun(ch) or {}).Name) .. ")")
+                    gunWas = nil
+                end
                 noclipNow = false
                 -- Owner: Healing Pad = 60 scrap + 4 batteries. The totals are workspace attributes Scrap / Batteries
                 -- (scan v-25z); only what is still missing is walked to, and Craft is sent once both are enough.
@@ -5471,18 +5496,22 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
                     local r = tostring(okC) .. " " .. tostring(res)
                     if r ~= lastCraft then lastCraft = r; log("Auto Farm: craft " .. PAD .. " -> " .. r) end
                 end
-                if not padTool() and (needScrap or needBatt) then
+                if not padTool() and (needScrap or needBatt or needGun) then
                     local folder, best, bestD = workspace:FindFirstChild("DroppedItems"), nil, math.huge
                     local masked = attr(ch, "WearingGasMask") == true
                     local bestIt
                     for _, it in ipairs(folder and folder:GetChildren() or {}) do
                         local n = string.lower(it.Name)
                         local batt = string.find(n, "battery", 1, true) ~= nil
-                        if itemInfo(it).type == "Resource" and (batt and needBatt or not batt and needScrap)
+                        local inf = itemInfo(it)
+                        local isGun = needGun and inf.toolType == "Gun"
+                        if (isGun or inf.type == "Resource" and (batt and needBatt or not batt and needScrap))
                             and not (skipUntil[it] and os.clock() < skipUntil[it]) then
                             local p = itemPart(it)
                             local pos = p and partPos(p)
-                            if pos and (pos - hrp.Position).Magnitude < bestD then best, bestD, bestIt = pos, (pos - hrp.Position).Magnitude, it end
+                            local d = pos and (pos - hrp.Position).Magnitude
+                            if d and isGun then d = d / 3 end  -- a gun first, unless it is 3x farther than the loot
+                            if d and d < bestD then best, bestD, bestIt = pos, d, it end
                         end
                     end
                     -- Owner: died in the radioactive zone. Items on a nuclear / reactor / radio tile are skipped without a mask.

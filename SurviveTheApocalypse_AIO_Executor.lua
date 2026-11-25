@@ -1,11 +1,11 @@
 local IS_APOC = game.GameId == 9098570654; local Players = game:GetService("Players")
 if not game:IsLoaded() then game.Loaded:Wait() end; while not Players.LocalPlayer do task.wait() end; local LocalPlayer = Players.LocalPlayer
 
--- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-25zzzzzzzz.
+-- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-25zzzzzzzzz.
 -- Install: put this file in your executor's autoexec folder or run it in a match. Own menu window: Right Alt hides / shows it. V = Speed, N = Noclip.
 -- Runs only in Survive the Apocalypse. Settings go to the executor's workspace folder. Use at your own risk: it sends the game's own messages (pickup, crates) and the game has an anti-cheat. Vibecoded.
 local NO_LOGS = true  -- true = no log files and no console lines (public copy)
-local VERSION = "aio-2026-11-25zzzzzzzz"  -- bump on every edit so the log shows which copy ran
+local VERSION = "aio-2026-11-25zzzzzzzzz"  -- bump on every edit so the log shows which copy ran
 local GAME_ID, LOG_FILE, APOC_DIR = "", "hbx_log.txt", "SurviveTheApocalypse"
 local logDirOk, logDirErr = pcall(function()
     local ok, id = pcall(function() return game.GameId end); if not ok or not id or id == 0 then id = game.PlaceId end
@@ -2561,7 +2561,7 @@ local function startApocHelper()
 -- Found in the game's ItemInteractClient / BackpackClient (dump\9098570654). AdjustBackpack with nil = UNSTORE (drops
 -- the bag's contents), so it is only ever called with an item. Log: C:\matcha\workspace\apoc_log.txt.
 -- Notes for Claude: D:\NPCHitBoxExpander\Documentation.md.
-local VERSION = "2026-11-25zzzzzzzz"  -- bump on every edit so the log shows which copy ran
+local VERSION = "2026-11-25zzzzzzzzz"  -- bump on every edit so the log shows which copy ran
 local GAME_ID = 9098570654
 
 local Players     = game:GetService("Players")
@@ -4705,7 +4705,11 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
     local function doing(t) _G.APOC_FARM_DOING = t end
     -- v-25zzzzzzz (owner: a friend's farm froze, no log on his phone): the loop's current step + when it got there,
     -- shown on the menu, so a screenshot tells where it hangs.
-    local function step(t) _G.APOC_FARM_STEP, _G.APOC_FARM_STEP_T = t, os.clock() end
+    local lootSince  -- first time the loop chose an item to walk to (the farm really looted)
+    local function step(t)
+        _G.APOC_FARM_STEP, _G.APOC_FARM_STEP_T = t, os.clock()
+        if t == "loot: choose an item" and not lootSince then lootSince = os.clock() end
+    end
     doing("starting")
     local function padTool()
         local ch = LocalPlayer.Character
@@ -5339,7 +5343,10 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
                 end
                 local h = c and c:FindFirstChildOfClass("Humanoid")
                 local why = (h and h.Health <= 0 and "you died")
-                    or (surv and surv >= 30 and surv < 60 and not gotLoot and "nothing looted by Survived 0:30")
+                    -- v-25zzzzzzzzz (owner: a friend's farm froze and this kicked him): only when the farm really
+                    -- looted for 20 s; a frozen farm is restarted by the watchdog instead.
+                    or (surv and surv >= 30 and surv < 60 and not gotLoot and lootSince and os.clock() - lootSince >= 20
+                        and "nothing looted by Survived 0:30")
                     -- surv >= 60: at the match start the clock sits at 1-3 s for a while (game36/37 left by mistake);
                     -- the first horde comes at 4:00.
                     or (surv and survMovedAt and surv >= 60 and os.clock() - survMovedAt > 6 and ("Survived clock stopped at " .. surv .. " s (horde)"))

@@ -1,11 +1,11 @@
 local IS_APOC = game.GameId == 9098570654; local Players = game:GetService("Players")
 if not game:IsLoaded() then game.Loaded:Wait() end; while not Players.LocalPlayer do task.wait() end; local LocalPlayer = Players.LocalPlayer
 
--- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-26.1.
+-- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-26.22.
 -- Install: put this file in your executor's autoexec folder or run it in a match. Own menu window: Right Alt hides / shows it. V = Speed, N = Noclip.
 -- Runs only in Survive the Apocalypse. Settings go to the executor's workspace folder. Use at your own risk: it sends the game's own messages (pickup, crates) and the game has an anti-cheat. Vibecoded.
 local NO_LOGS = true  -- true = no log files and no console lines (public copy)
-local VERSION = "aio-2026-11-26.1"  -- bump on every edit so the log shows which copy ran
+local VERSION = "aio-2026-11-26.22"  -- bump on every edit so the log shows which copy ran
 local GAME_ID, LOG_FILE, APOC_DIR = "", "hbx_log.txt", "SurviveTheApocalypse"
 local logDirOk, logDirErr = pcall(function()
     local ok, id = pcall(function() return game.GameId end); if not ok or not id or id == 0 then id = game.PlaceId end
@@ -2658,7 +2658,7 @@ local function startApocHelper()
 -- Found in the game's ItemInteractClient / BackpackClient (dump\9098570654). AdjustBackpack with nil = UNSTORE (drops
 -- the bag's contents), so it is only ever called with an item. Log: C:\matcha\workspace\apoc_log.txt.
 -- Notes for Claude: D:\NPCHitBoxExpander\Documentation.md.
-local VERSION = "2026-11-26.1"  -- bump on every edit so the log shows which copy ran
+local VERSION = "2026-11-26.22"  -- bump on every edit so the log shows which copy ran
 local GAME_ID = 9098570654
 
 local Players     = game:GetService("Players")
@@ -5167,20 +5167,70 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
         while inst and inst.Parent ~= tiles do inst = inst.Parent end
         return inst and inst.Name, inst
     end
-    local function leg(pos, untilT, quick)  -- quick: give up after 2 s stuck (then go() finds a path)
+    -- Owner (2026-11-26): a ramp over low fences. An invisible WedgePart that only exists on your screen, set against a
+    -- low obstacle (top 1-5 studs above your feet, nothing solid at chest height), low end toward you, gone after 4 s.
+    -- Live check: a WedgePart is high at its back and low at its front (LookVector), so the front faces you.
+    local ramped, rampLogged = setmetatable({}, {__mode = "k"}), 0
+    -- game114: a ramp got a ramp of its own (a solid part cannot be CanQuery off), so ramps live in one folder that
+    -- every ray of the walk ignores.
+    local function rampFolder()
+        local f = workspace:FindFirstChild("APOC_Ramps")
+        if not f then f = Instance.new("Folder"); f.Name = "APOC_Ramps"; f.Parent = workspace end
+        return f
+    end
+    local function rampOver(hit, dir, now)
+        local p = hit.Instance
+        if ramped[p] and os.clock() < ramped[p] then return end
+        local feet = now.Y - 3
+        local tp = RaycastParams.new()
+        tp.FilterType, tp.FilterDescendantsInstances = Enum.RaycastFilterType.Include, {p}
+        local th = workspace:Raycast(hit.Position + dir * 0.2 + Vector3.new(0, 8, 0), Vector3.new(0, -12, 0), tp)
+        local h = th and th.Position.Y - feet
+        if not h or h < 1 or h > 5 then return end
+        local cp = RaycastParams.new()
+        cp.FilterType, cp.FilterDescendantsInstances = Enum.RaycastFilterType.Exclude, {LocalPlayer.Character, rampFolder()}
+        if workspace:Raycast(now + Vector3.new(0, 1.5, 0), dir * 10, cp) then return end  -- solid at chest height: a wall
+        ramped[p] = os.clock() + 4
+        local w = Instance.new("WedgePart")
+        w.Anchored, w.CanCollide, w.CanTouch, w.Transparency = true, true, false, 1
+        w.Size = Vector3.new(8, h + 0.3, 7)
+        local c = Vector3.new(hit.Position.X, feet + (h + 0.3) / 2, hit.Position.Z) - dir * 3.5
+        w.CFrame = CFrame.lookAt(c, c - dir)
+        w.Parent = rampFolder()
+        task.delay(4, function() pcall(function() w:Destroy() end) end)
+        rampLogged = rampLogged + 1
+        if rampLogged <= 20 then log("Auto Farm: ramp over " .. p:GetFullName() .. " (" .. fmt(h) .. " tall) at " .. where(c)) end
+    end
+    local function leg(pos, untilT, quick)  -- quick: return false, "stuck" after 4 s stuck (then go() takes the roads)
         local lastPos, lastT, stuckFor = nil, os.clock(), 0
         -- Rubber-band (game48: always at walls with Noclip, WalkSpeed under the game's max) = the server puts you back.
         -- Owner's trick: small walk, stop, small walk. It ends as soon as you are past the spot you were pulled back
         -- from. Owner (game51): never a sideways detour ("random path"), always straight through.
-        local prev, pulseUntil, pulseN, best = nil, 0, 0, math.huge
+        local prev, pulseUntil, pulseN, best, mark, markT = nil, 0, 0, math.huge, math.huge, os.clock()
         while active() and os.clock() < untilT do
+            if quick and _G.APOC_TEST_STUCK then _G.APOC_TEST_STUCK = nil; return false, "stuck" end  -- live test flag
             local ch, hum, hrp = body()
             if not hum then return false end
-            if radNow() and not escaping and lastSafe then
+            if radNow() and not escaping then
+                -- Owner died (game112): the last safe spot was 1 stud away, still inside (the biome shows late), so it
+                -- stood in it. Out = the centre of the nearest tile that is not hot; the last safe spot only if none.
                 escaping = true
-                log("Auto Farm: radiation (no gas mask) at " .. where(hrp.Position) .. ", walking back out to " .. where(lastSafe))
-                doing("radiation! walking back out")
-                leg(lastSafe, os.clock() + 20)
+                local out, od = nil, nil
+                local m = workspace:FindFirstChild("Map")
+                local tl = m and m:FindFirstChild("Tiles")
+                for _, t in ipairs(tl and tl:GetChildren() or {}) do
+                    if attr(t, "Irradiated") ~= true then
+                        local okP, pv = pcall(function() return t:GetPivot().Position end)
+                        local d = okP and pv and flat(pv - hrp.Position).Magnitude
+                        if d and (not od or d < od) and not hot(pv) then out, od = Vector3.new(pv.X, hrp.Position.Y, pv.Z), d end
+                    end
+                end
+                out = out or lastSafe
+                if out then
+                    log("Auto Farm: radiation (no gas mask) at " .. where(hrp.Position) .. ", walking out to " .. where(out))
+                    doing("radiation! walking out")
+                    leg(out, os.clock() + 30)
+                end
                 escaping = false
                 return false
             end
@@ -5195,6 +5245,10 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
                 pulseUntil = os.clock() + 4
             end
             if d < best - 2 then best, pulseUntil = d, 0 end  -- past the wall: back to a normal walk
+            -- Owner (Police Station): sliding along a wall for 20-30 s never counted as stuck (you kept moving).
+            -- Not 5 studs closer in 4 s = stuck too (game101: creeping 2 studs at a time along a wall took 16 s).
+            if d < mark - 5 then mark, markT = d, os.clock() end
+            if quick and os.clock() - markT > 4 then return false, "stuck" end
             prev = now
             if d < 3 then return true end
             if os.clock() < pulseUntil then
@@ -5203,18 +5257,22 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
             else
                 hum:MoveTo(pos)
             end
-            -- Owner (screenshot: stuck at a low fence): something at knee height 4 studs ahead = jump over it.
+            -- Owner (screenshot: stuck at a low fence): something at knee height ahead = jump over it. 8 studs ahead
+            -- (was 4): farm fences are 0.5 thin and 3.9 tall, and one 0.2 s step at speed 28 is 5.6 studs.
             local fwd = flat(pos - now)
             if fwd.Magnitude > 0.1 then
                 local kp = RaycastParams.new()
-                kp.FilterType, kp.FilterDescendantsInstances = Enum.RaycastFilterType.Exclude, {ch}
-                local okK, hitK = pcall(function() return workspace:Raycast(now - Vector3.new(0, 1.5, 0), fwd.Unit * 4, kp) end)
-                if okK and hitK and hitK.Instance and hitK.Instance.CanCollide then hum.Jump = true end
+                kp.FilterType, kp.FilterDescendantsInstances = Enum.RaycastFilterType.Exclude, {ch, rampFolder()}
+                local okK, hitK = pcall(function() return workspace:Raycast(now - Vector3.new(0, 1.5, 0), fwd.Unit * 8, kp) end)
+                if okK and hitK and hitK.Instance and hitK.Instance.CanCollide then
+                    hum.Jump = true
+                    pcall(rampOver, hitK, fwd.Unit, now)
+                end
             end
             if not lastPos or (hrp.Position - lastPos).Magnitude > 1 then lastPos, lastT, stuckFor = hrp.Position, os.clock(), 0
             elseif os.clock() - lastT > 1 then
                 hum.Jump, lastT, stuckFor = true, os.clock(), stuckFor + 1
-                if quick and stuckFor >= 2 then return false end
+                if quick and stuckFor >= 4 then return false, "stuck" end
                 if stuckFor == 3 and stuckLogged < 30 then
                     stuckLogged = stuckLogged + 1
                     log("Auto Farm: stuck 3 s at " .. where(hrp.Position) .. ", walking to " .. fmt(pos.X) .. ", " .. fmt(pos.Z)
@@ -5231,7 +5289,7 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
     -- 60-stud piece of a walk, a few routes are checked with flat rays at chest height and the one through the fewest
     -- walls is walked, in straight pieces: straight, L-shaped (X then Z, Z then X), and lanes 30 / 60 studs to each
     -- side. Shorter wins a tie. Only loaded buildings are seen, so it checks again every 60 studs.
-    local function wallHits(a, b)
+    local function wallHits(a, b, extra)  -- extra: one more instance the rays ignore
         local ex = {}
         for _, n in ipairs({"Characters", "DroppedItems"}) do
             local f = workspace:FindFirstChild(n)
@@ -5241,6 +5299,9 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
         local map = workspace:FindFirstChild("Map")
         local bd = map and map:FindFirstChild("Border")
         if bd then ex[#ex + 1] = bd end
+        if extra then ex[#ex + 1] = extra end
+        local rf = workspace:FindFirstChild("APOC_Ramps")
+        if rf then ex[#ex + 1] = rf end
         local rq = RaycastParams.new()
         rq.FilterType, rq.FilterDescendantsInstances = Enum.RaycastFilterType.Exclude, ex
         local from, to = a + Vector3.new(0, 3, 0), b + Vector3.new(0, 3, 0)
@@ -5250,7 +5311,7 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
             if d.Magnitude < 1 then break end
             local hit = workspace:Raycast(from, d, rq)
             if not hit then break end
-            n = n + 1
+            if hit.Instance.CanCollide then n = n + 1 end  -- game104: a shopping cart (CanCollide off) is no wall
             from = hit.Position + d.Unit * 4  -- past this wall, look for the next one
         end
         return n
@@ -5279,24 +5340,7 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
             sc = sc + len / 1000
             if not bestS or sc < bestS then best, bestS = pts, sc end
         end
-        return best
-    end
-    local function go(pos, secs)
-        local untilT = os.clock() + secs
-        while active() and os.clock() < untilT do
-            local _, _, r = body()
-            if not r then break end
-            local f = flat(pos - r.Position)
-            if f.Magnitude < 3 then break end
-            local piece = f.Magnitude > 60 and (r.Position + f.Unit * 60) or pos
-            local okW = true
-            for _, w in ipairs(route(r.Position, piece)) do
-                if not leg(w, untilT) then okW = false; break end
-            end
-            if not okW then break end  -- timed out, fell, died or the farm stopped
-        end
-        local _, _, h2 = body()
-        return h2 ~= nil and flat(pos - h2.Position).Magnitude < 4
+        return best, bestS
     end
     local function isRoad(name)
         local n = string.lower(tostring(name))
@@ -5304,6 +5348,206 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
             if string.find(n, w, 1, true) then return true end
         end
         return false
+    end
+    -- v-26.2 (live check: Map.Tiles sit on a 60-stud grid; road tiles keep their pivot even when their parts are not
+    -- streamed in). Road cells (not Irradiated) -> shortest chain of road cells from the road nearest a to the road
+    -- nearest b (grid search), corners only, then b itself. nil when no road is within 3 cells or no chain joins them.
+    local roadCache, roadAt = nil, 0
+    local function roadCells()  -- "x,z" cell -> {x, z}; rebuilt every 5 s
+        if roadCache and os.clock() < roadAt then return roadCache end
+        local map = workspace:FindFirstChild("Map")
+        local tiles = map and map:FindFirstChild("Tiles")
+        if not tiles then return nil end
+        local road = {}
+        for _, t in ipairs(tiles:GetChildren()) do
+            if isRoad(t.Name) and attr(t, "Irradiated") ~= true then
+                local okP, pv = pcall(function() return t:GetPivot().Position end)
+                if okP and pv then road[math.floor(pv.X / 60 + 0.5) .. "," .. math.floor(pv.Z / 60 + 0.5)] = {math.floor(pv.X / 60 + 0.5), math.floor(pv.Z / 60 + 0.5)} end
+            end
+        end
+        roadCache, roadAt = road, os.clock() + 5
+        return road
+    end
+    local function nearRoad(p, cells)  -- nearest road cell key within that many cells, and its distance
+        local road = roadCells()
+        if not road then return nil end
+        local cx, cz, bk, bd = math.floor(p.X / 60 + 0.5), math.floor(p.Z / 60 + 0.5), nil, nil
+        for dx = -cells, cells do
+            for dz = -cells, cells do
+                local k = (cx + dx) .. "," .. (cz + dz)
+                local d = road[k] and flat(Vector3.new((cx + dx) * 60, 0, (cz + dz) * 60) - p).Magnitude
+                if d and (not bd or d < bd) then bk, bd = k, d end
+            end
+        end
+        return bk, bd
+    end
+    local function roadPath(a, b)
+        local road = roadCells()
+        if not road then return nil end
+        local function near(p) return (nearRoad(p, 3)) end
+        local sk, gk = near(a), near(b)
+        if not sk or not gk then return nil end
+        local from, queue, head = {[sk] = false}, {sk}, 1
+        while head <= #queue and from[gk] == nil do
+            local c = road[queue[head]]; head = head + 1
+            for _, d in ipairs({{1, 0}, {-1, 0}, {0, 1}, {0, -1}}) do
+                local nk = (c[1] + d[1]) .. "," .. (c[2] + d[2])
+                if road[nk] and from[nk] == nil then from[nk] = c[1] .. "," .. c[2]; queue[#queue + 1] = nk end
+            end
+        end
+        if from[gk] == nil then return nil end
+        local cells, k = {}, gk
+        while k do table.insert(cells, 1, road[k]); k = from[k] end
+        local pts = {}
+        for i, c in ipairs(cells) do
+            local p0, p1 = cells[i - 1], cells[i + 1]
+            -- keep the first cell, the last, and every corner (direction changes)
+            if not p0 or not p1 or (c[1] - p0[1]) ~= (p1[1] - c[1]) or (c[2] - p0[2]) ~= (p1[2] - c[2]) then
+                pts[#pts + 1] = Vector3.new(c[1] * 60, a.Y, c[2] * 60)
+            end
+        end
+        pts[#pts + 1] = b
+        return pts
+    end
+    -- Owner (2026-11-26): "don't loot inside buildings, focus on the road scraps and batteries". A spot counts only
+    -- when nothing big is right above it (no roof) and a straight line from the nearest road cell (2 cells) to it
+    -- hits no wall. Remembered 10 s per thing. No map info = counts (old behaviour).
+    local byRoadMemo = setmetatable({}, {__mode = "k"})
+    local function byRoad(thing, pos)
+        local m = byRoadMemo[thing]
+        if m and os.clock() < m[2] then return m[1] end
+        local ok = true
+        if roadCells() then
+            local k = nearRoad(pos, 2)
+            local c = k and roadCells()[k]
+            if not c then ok = false else
+                local ex = {LocalPlayer.Character, workspace:FindFirstChild("Characters"), workspace:FindFirstChild("DroppedItems"),
+                    workspace:FindFirstChild("Structures")}
+                local rq = RaycastParams.new()
+                rq.FilterType, rq.FilterDescendantsInstances = Enum.RaycastFilterType.Exclude, ex
+                local up = workspace:Raycast(pos + Vector3.new(0, 2, 0), Vector3.new(0, 60, 0), rq)
+                -- game109 (owner: "open fields too"): a roof is a big flat slab (a tree trunk is not), and the line from
+                -- the road runs 5 studs up, over fences (3.9), mounds and low cars (it ran at 3 and hit them).
+                local ui = up and up.Instance
+                if ui and ui:IsA("BasePart") and ui.Size.X * ui.Size.Z > 200 and ui.Size.Y <= 6 then ok = false
+                else ok = wallHits(Vector3.new(c[1] * 60, pos.Y + 2, c[2] * 60), pos + Vector3.new(0, 2, 0), workspace:FindFirstChild("Structures")) == 0 end
+            end
+        end
+        byRoadMemo[thing] = {ok, os.clock() + 10}
+        return ok
+    end
+    _G.APOC_BYROAD = byRoad  -- live test hook (Real): call it on DroppedItems to check the indoor filter
+    -- v-26.3 (live check: loot on a Factory upper floor y26 and a raised LargeFiller y15; no parts named stair / ramp,
+    -- but Roblox's path search found the way up in 0.15-0.3 s). Only for a target 8+ studs above you, after go():
+    -- walk the path's points (jump where it says). False when there is no path or you are not up there in time.
+    local PathS = game:GetService("PathfindingService")
+    local function climb(target, secs, why)
+        local _, _, r = body()
+        if not r then return false end
+        local p = PathS:CreatePath({AgentRadius = 2, AgentHeight = 5, AgentCanJump = true, AgentCanClimb = true})
+        local okC = pcall(function() p:ComputeAsync(r.Position, target) end)
+        if not okC or p.Status ~= Enum.PathStatus.Success then
+            log("Auto Farm: " .. (why or "climbing") .. ": no path to " .. where(target) .. " found")
+            return false
+        end
+        local untilT, pts = os.clock() + secs, p:GetWaypoints()
+        log("Auto Farm: " .. (why or "climbing") .. " to " .. where(target) .. " (" .. #pts .. " path points)")
+        for _, w in ipairs(pts) do
+            local _, hum = body()
+            if not hum then return false end
+            if w.Action == Enum.PathWaypointAction.Jump then hum.Jump = true end
+            if not leg(w.Position, untilT, true) then break end
+        end
+        local _, _, r2 = body()
+        return r2 ~= nil and (target - r2.Position).Magnitude < 6
+    end
+    -- Backup when a leg is stuck 4 s (never gives up until the time is up): odd tries walk the road chain, even tries
+    -- (or no road chain) back off 10 studs and walk a lane 30 studs to a side (alternating), then the normal walk again.
+    local roadLogged = 0
+    local function go(pos, secs, viaRoads)  -- viaRoads: walk the road chain first (any length), then as usual
+        local untilT, tries, roadsOff = os.clock() + secs, 0, 0
+        if viaRoads then
+            local _, _, r0 = body()
+            for _, w in ipairs(r0 and roadPath(r0.Position, pos) or {}) do
+                if not leg(w, untilT, true) then break end
+            end
+        end
+        while active() and os.clock() < untilT do
+            local _, _, r = body()
+            if not r then break end
+            local f = flat(pos - r.Position)
+            if f.Magnitude < 3 then break end
+            local piece = f.Magnitude > 60 and (r.Position + f.Unit * 60) or pos
+            local okW, why = true, nil
+            -- Owner (Police Station, loot walks): every route through the building beat the road around it. Best route
+            -- here hits a wall and the straight line to the target hits 2+ = the road chain instead, when it is at most
+            -- 2.5x the straight distance + 120. Not on Noclip walks (edge walk).
+            local pts, sc = route(r.Position, piece)
+            -- game99: the 60-stud piece only saw the front wall; the whole straight line to the target counts too.
+            -- game110: one building near the start of a 1400-stud walk took the roads all the way (2157 studs). Only
+            -- the next 240 studs count: roads around that bit (ending on the last road cell), then straight again.
+            local near = f.Magnitude > 240 and (r.Position + f.Unit * 240) or pos
+            local onRoads = false
+            if sc and sc >= 1 and not noclipNow and os.clock() >= roadsOff and wallHits(r.Position, near) >= 2 then  -- one car or fence: just jumped
+                local rp = roadPath(r.Position, near)
+                if rp and near ~= pos and #rp > 1 then table.remove(rp) end  -- not into the building at the 240 mark
+                local len, q0 = 0, r.Position
+                for _, w in ipairs(rp or {}) do len = len + flat(w - q0).Magnitude; q0 = w end
+                if rp and len <= flat(near - r.Position).Magnitude * 2.5 + 120 then
+                    pts, onRoads = rp, true
+                    if roadLogged < 30 then
+                        roadLogged = roadLogged + 1
+                        log("Auto Farm: walls on every route at " .. where(r.Position) .. ", taking the roads (" .. math.floor(len)
+                            .. " studs vs " .. math.floor(flat(near - r.Position).Magnitude) .. " straight)")
+                    end
+                end
+            end
+            for _, w in ipairs(pts) do
+                okW, why = leg(w, untilT, true)
+                if not okW then break end
+            end
+            if onRoads then  -- a road bit that got you less than 30 studs closer = straight for 10 s (no loop)
+                local _, _, r3 = body()
+                if r3 and flat(pos - r3.Position).Magnitude > f.Magnitude - 30 then roadsOff = os.clock() + 10 end
+            end
+            if not okW and why ~= "stuck" then break end  -- timed out, fell, died or the farm stopped
+            if not okW then
+                tries = tries + 1
+                local _, _, r2 = body()
+                if not r2 then break end
+                -- Owner (game100): near the target the road chain ends in the same fence / yard wall, back and forth.
+                -- Within 150 studs, odd tries take Roblox's path search around it instead (0.15-0.3 s, live test).
+                local close = flat(pos - r2.Position).Magnitude < 150  -- game111: roads near the wall took 25 s
+                if tries % 2 == 1 and close then
+                    if roadLogged < 30 then
+                        roadLogged = roadLogged + 1
+                        log("Auto Farm: walk stuck at " .. where(r2.Position) .. " (try " .. tries .. "), path search around it")
+                    end
+                    if climb(Vector3.new(pos.X, r2.Position.Y, pos.Z), untilT - os.clock(), "path around") then break end
+                end
+                local rp = tries % 2 == 1 and not close and roadPath(r2.Position, pos) or nil
+                if roadLogged < 30 and not (tries % 2 == 1 and close) then
+                    roadLogged = roadLogged + 1
+                    log("Auto Farm: walk stuck at " .. where(r2.Position) .. " (try " .. tries .. "), "
+                        .. (rp and ("taking the roads (" .. #rp .. " turns)") or "backing off and taking a side lane"))
+                end
+                if rp then
+                    for _, w in ipairs(rp) do
+                        okW, why = leg(w, untilT, true)
+                        if not okW then break end
+                    end
+                else
+                    local bk = flat(r2.Position - pos)
+                    bk = bk.Magnitude > 0.1 and bk.Unit or Vector3.new(1, 0, 0)
+                    local side = Vector3.new(-bk.Z, 0, bk.X) * (tries % 4 < 2 and 30 or -30)
+                    okW, why = leg(r2.Position + bk * 10, untilT, true)
+                    if okW or why == "stuck" then okW, why = leg(r2.Position + bk * 10 + side, untilT, true) end
+                end
+                if not okW and why ~= "stuck" then break end
+            end
+        end
+        local _, _, h2 = body()
+        return h2 ~= nil and flat(pos - h2.Position).Magnitude < 4
     end
     -- Walk out to the nearest edge in 30-stud steps; stop at the edge line or where the next step has no ground.
     local toEdgeInner
@@ -5349,7 +5593,7 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
                 if fails >= 6 then return false, "6 failed steps (tile " .. tostring(t) .. ")" end
             end
         end
-        return false, "timed out"
+        return false, active() and "timed out" or "farm stopped"
     end
 
     -- Owner (game50): the pad sat next to a building / the border and the horde came; "there are a lot of other
@@ -5481,6 +5725,7 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
         end)
     end
     local skipUntil, lastHave = {}, nil  -- item -> time it is left alone until
+    local visited, exploreTo, exploreUntil = {}, nil, 0  -- road cells been near; current road-travel target
     -- Leave watcher, its own loop every second (game34: a horde came during a 3-minute edge search and the old
     -- check, which ran between farm steps, never got a turn).
     -- Owner rules: leave ONLY when (1) a horde really spawned: the Survived clock (player EternalNightSurvived, it
@@ -5553,6 +5798,20 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
             if not scanned then scanned = true; pcall(scan) end
             step("gear (speed, noclip, Kill Aura, gun)")
             gear(ch, hum)
+            -- Test trigger for live walk tests through Real: _G.APOC_TEST_WALK = a Vector3 -> one go() there (40 s).
+            local tw = _G.APOC_TEST_WALK
+            if typeof(tw) == "Vector3" and not placedAt then  -- never pulls you off a placed pad
+                _G.APOC_TEST_WALK = nil
+                step("test walk")
+                doing("test walk to " .. where(tw))
+                local t0 = os.clock()
+                local okT = go(tw, 40)
+                local _, _, hT = body()
+                if hT and tw.Y - hT.Position.Y > 8 then okT = climb(tw, 40); _, _, hT = body() end
+                _G.APOC_TEST_RESULT = (okT and "reached" or "NOT reached") .. " in " .. string.format("%.1f", os.clock() - t0)
+                    .. " s, now " .. (hT and where(hT.Position) or "?")
+                log("Auto Farm: test walk to " .. where(tw) .. ": " .. _G.APOC_TEST_RESULT)
+            end
             step("look for a placed pad")
             if os.clock() >= statusAt then
                 statusAt = os.clock() + 60
@@ -5634,7 +5893,7 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
                             local p = itemPart(it)
                             local pos = p and partPos(p)
                             local d = pos and (pos - hrp.Position).Magnitude
-                            if d and d < bestD then best, bestD, bestIt = pos, d, it end
+                            if d and d < bestD and not _G.APOC_TEST_NOLOOT and byRoad(it, pos) then best, bestD, bestIt = pos, d, it end
                         end
                     end
                     -- Owner: died in the radioactive zone. Items on a nuclear / reactor / radio tile are skipped without a mask.
@@ -5644,7 +5903,7 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
                     -- studs, the nearest Scrap Pile is walked to (stop 5 studs short; 8 left mobile players too far to grab the drops) and Kill Aura's melee breaks it;
                     -- Auto Pickup takes what drops. Not broken in 10 s = left alone 60 s. No pile = ground items.
                     local pile, pileAt, pileD
-                    if needScrap and (not best or bestD > 30) then
+                    if needScrap then
                         local hasMelee = false
                         for _, holder in ipairs({ch, LocalPlayer:FindFirstChild("Backpack")}) do
                             for _, t in ipairs(holder and holder:GetChildren() or {}) do
@@ -5657,10 +5916,13 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
                                 and not (skipUntil[m] and os.clock() < skipUntil[m]) then
                                 local okP, piv = pcall(function() return m:GetPivot().Position end)
                                 local dd = okP and piv and (piv - hrp.Position).Magnitude
-                                if dd and (not pileD or dd < pileD) and (masked or not hot(piv)) then pile, pileAt, pileD = m, piv, dd end
+                                if dd and (not pileD or dd < pileD) and (masked or not hot(piv)) and not _G.APOC_TEST_NOLOOT and byRoad(m, piv) then pile, pileAt, pileD = m, piv, dd end
                             end
                         end
                     end
+                    -- Owner (game111): it broke piles while a battery lay close on the road (a pile won whenever no ground
+                    -- item was within 30). Now the closer one wins; ground loot (batteries too) wins up to 15 studs farther.
+                    if pile and best and bestD <= pileD + 15 then pile = nil end
                     if pile then
                         step("loot: break a Scrap Pile")
                         doing("walking to a Scrap Pile (" .. math.floor(pileD) .. " studs)")
@@ -5716,6 +5978,19 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
                                 end
                             end
                             if still() then
+                                -- backup 2 (game91: a Battery 22.5 studs above you on an upper floor): climb to it
+                                local ip1 = itemPart(bestIt)
+                                local q1 = ip1 and partPos(ip1)
+                                local _, _, h1 = body()
+                                if q1 and h1 and q1.Y - h1.Position.Y > 8 then
+                                    doing("climbing to " .. bestIt.Name)
+                                    if climb(q1, 30) then
+                                        local t2 = os.clock()
+                                        while still() and os.clock() - t2 < 3 do task.wait(0.2) end
+                                    end
+                                end
+                            end
+                            if still() then
                                 skipUntil[bestIt] = os.clock() + 60
                                 local ip = itemPart(bestIt)
                                 local d = ip and partPos(ip) and (partPos(ip) - hrp.Position)
@@ -5746,6 +6021,32 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
                             log("Auto Farm: none picked; DroppedItems " .. tostring(folder ~= nil) .. " " .. #all .. " items, need scrap "
                                 .. tostring(needScrap) .. " batt " .. tostring(needBatt) .. ": " .. (#out > 0 and table.concat(out, "; ") or "no resources"))
                         end
+                        -- Owner (2026-11-26): no road loot in sight = travel the roads outward toward the border wall,
+                        -- loot shows up on the way. Target: a road cell 150-300 studs away, 90+ inside the wall, not been
+                        -- near, the farthest from the centre (a little random); kept 40 s. No road cell = the old random walk.
+                        local vk = nearRoad(hrp.Position, 0)
+                        if vk then visited[vk] = true end
+                        local road = roadCells()
+                        if road and (not exploreTo or os.clock() > exploreUntil or flat(exploreTo - hrp.Position).Magnitude < 10) then
+                            exploreTo = nil
+                            local lim, bestV = borderR() - 90, nil
+                            for k, c in pairs(road) do
+                                local q = Vector3.new(c[1] * 60, hrp.Position.Y, c[2] * 60)
+                                local dd, rr = flat(q - hrp.Position).Magnitude, flat(q).Magnitude
+                                if dd >= 150 and dd <= 300 and rr <= lim and not visited[k] and not hot(q) then
+                                    local v = -rr + math.random() * 80  -- game105: "any farther out" circled at r 190; farthest out wins
+                                    if not bestV or v < bestV then exploreTo, bestV = q, v end
+                                end
+                            end
+                            if exploreTo then
+                                exploreUntil = os.clock() + 40
+                                log("Auto Farm: no road loot in sight, travelling the roads to " .. where(exploreTo))
+                            end
+                        end
+                        if exploreTo then
+                            doing("no road loot in sight, travelling the roads toward the wall")
+                            go(exploreTo, 6)  -- straight over open ground; roads only around buildings (game108)
+                        else
                         -- nothing seen: walk 80 studs a random way, kept 90 studs inside the (round) wall
                         local h = borderR() - 90
                         local a, t = math.random() * math.pi * 2, nil
@@ -5756,6 +6057,7 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
                         end
                         if h > 0 and flat(t).Magnitude > h then local u = flat(t).Unit * h; t = Vector3.new(u.X, t.Y, u.Z) end
                         go(t, 20)
+                        end
                     end
                 end
             elseif not placedAt then
@@ -5771,6 +6073,24 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
                     doing("pad crafted, walking out past the border wall")
                     -- Straight out from the centre (the wall is a circle). Blocked = the next direction, 45 degrees
                     -- further each time (8 in all); all 8 blocked = walk 100 studs a random way and try again.
+                    -- Owner (2026-11-26): "cleanest way, ignore buildings" and (game108) "allow plains, it takes 3 minutes
+                    -- on the roads": straight out over open ground (fences are jumped) to 40 studs inside the wall;
+                    -- go() switches to the roads only where a building is in the way. Then the edge walk as before.
+                    local u = flat(hrp.Position)
+                    u = u.Magnitude > 1 and u.Unit or Vector3.new(1, 0, 0)
+                    local bp = Vector3.new(u.X * (borderR() - 40), hrp.Position.Y, u.Z * (borderR() - 40))
+                    -- game112 death: only the end was checked and the line ran into radiation. Every 30 studs of it must
+                    -- be clear, else the old step-by-step edge walk (it steps around hot tiles) does it all.
+                    local clear, dl = true, flat(bp - hrp.Position)
+                    for k = 30, dl.Magnitude, 30 do
+                        if hot(hrp.Position + dl.Unit * k) then clear = false; break end
+                    end
+                    if not clear then log("Auto Farm: radiation on the straight line out, stepping out instead") end
+                    if clear and dl.Magnitude > 60 and not hot(bp) then
+                        log("Auto Farm: straight out over open ground to " .. where(bp) .. " first")
+                        doing("pad crafted, walking out to the wall")
+                        go(bp, 90)
+                    end
                     local a0 = math.atan2(hrp.Position.Z, hrp.Position.X)
                     for _, k in ipairs({0, 1, -1, 2, -2, 3, -3, 4}) do
                         local ax = Vector3.new(math.cos(a0 + k * math.pi / 4), 0, math.sin(a0 + k * math.pi / 4))

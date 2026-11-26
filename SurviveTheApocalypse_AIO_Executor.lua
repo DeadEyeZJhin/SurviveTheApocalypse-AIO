@@ -1,11 +1,11 @@
 local IS_APOC = game.GameId == 9098570654; local Players = game:GetService("Players")
 if not game:IsLoaded() then game.Loaded:Wait() end; while not Players.LocalPlayer do task.wait() end; local LocalPlayer = Players.LocalPlayer
 
--- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-25.28.
+-- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-26.1.
 -- Install: put this file in your executor's autoexec folder or run it in a match. Own menu window: Right Alt hides / shows it. V = Speed, N = Noclip.
 -- Runs only in Survive the Apocalypse. Settings go to the executor's workspace folder. Use at your own risk: it sends the game's own messages (pickup, crates) and the game has an anti-cheat. Vibecoded.
 local NO_LOGS = true  -- true = no log files and no console lines (public copy)
-local VERSION = "aio-2026-11-25.28"  -- bump on every edit so the log shows which copy ran
+local VERSION = "aio-2026-11-26.1"  -- bump on every edit so the log shows which copy ran
 local GAME_ID, LOG_FILE, APOC_DIR = "", "hbx_log.txt", "SurviveTheApocalypse"
 local logDirOk, logDirErr = pcall(function()
     local ok, id = pcall(function() return game.GameId end); if not ok or not id or id == 0 then id = game.PlaceId end
@@ -164,12 +164,19 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
     -- game moves it) passes through. Re-applied every second in case the game resets them; put back when turned off.
     vals.move_border = savedMove.border == true  -- remembered like the settings (owner); Speed / Noclip always start off
     local borderOff, borderNext, savedBorder = {}, 0, vals.move_border
+    -- Misc (owner, 2026-11-26), saved in the same file: remember the menu open / minimized, and the camera sees
+    -- through walls (Roblox's own Invisicam: walls between camera and you turn see-through, the camera never zooms in).
+    vals.misc_remember = savedMove.remember ~= false
+    vals.misc_camClip = savedMove.camClip == true
+    local savedMisc = tostring(vals.misc_remember) .. tostring(vals.misc_camClip)
+    local origOcclusion, camClipOn
     local function restoreBorder()
         for p, o in pairs(borderOff) do pcall(function() p.CanCollide, p.CanTouch = o[1], o[2] end) end
         borderOff = {}
     end
     local function restoreMove()
         restoreBorder()
+        if camClipOn then pcall(function() LP.DevCameraOcclusionMode = origOcclusion end); camClipOn = false end
         local hum = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
         if hum and origSpeed then pcall(function() hum.WalkSpeed = origSpeed end) end
         origSpeed = nil
@@ -215,9 +222,16 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
         elseif not vals.move_border and next(borderOff) then
             restoreBorder()
         end
-        if vals.move_speed ~= savedSpeed or vals.move_border ~= savedBorder then
-            savedSpeed, savedBorder = vals.move_speed, vals.move_border
-            pcall(writefile, MOVE_FILE, HS:JSONEncode({speed = savedSpeed, border = savedBorder}))
+        if (vals.misc_camClip == true) ~= (camClipOn == true) then
+            if not camClipOn then origOcclusion = LP.DevCameraOcclusionMode end
+            camClipOn = vals.misc_camClip == true
+            pcall(function() LP.DevCameraOcclusionMode = camClipOn and Enum.DevCameraOcclusionMode.Invisicam or origOcclusion end)
+        end
+        local misc = tostring(vals.misc_remember) .. tostring(vals.misc_camClip)
+        if vals.move_speed ~= savedSpeed or vals.move_border ~= savedBorder or misc ~= savedMisc then
+            savedSpeed, savedBorder, savedMisc = vals.move_speed, vals.move_border, misc
+            pcall(writefile, MOVE_FILE, HS:JSONEncode({speed = savedSpeed, border = savedBorder,
+                remember = vals.misc_remember ~= false, camClip = vals.misc_camClip == true}))
         end
     end)
     -- Anti AFK in the background (owner, 2026-11-25): Roblox fires LocalPlayer.Idled after 2 min without input; a
@@ -239,6 +253,10 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
         s:SliderFloat("move_speed", "Walk speed", 16, 120, 30, "%.1f")
         s:Toggle("move_noclip", "Noclip (N)", false)
         s:Toggle("move_border", "Drive through the map border (remembered)", false)
+        s = tab:Section("Misc", "Left")
+        s:Toggle("misc_remember", "Remember menu open / minimized", true)
+        s:Toggle("misc_camClip", "Camera sees through walls", false)
+        if _G.HBX_MISC_UI then _G.HBX_MISC_UI(s) end  -- Camera FOV, from the hitbox part
     end
 
     UI = {}
@@ -287,11 +305,12 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
         local Y0 = math.clamp(tonumber(lay.y) or (small and 50 or 60), 0, math.max(0, vp.Y - 30))
         local win = mk("Frame", {Size = UDim2.new(0, W0, 0, H0), Position = UDim2.new(0, X0, 0, Y0), BackgroundColor3 = C.bg,
             BorderSizePixel = 0, Active = true}, sg)
-        local fullSize
+        local fullSize, icon
         local function saveLayout()
             local s = fullSize or win.Size
             pcall(writefile, LAYOUT_FILE, HS:JSONEncode({w = s.X.Offset, h = s.Y.Offset,
-                x = win.AbsolutePosition.X, y = win.AbsolutePosition.Y, collapsed = collapsed}))
+                x = win.AbsolutePosition.X, y = win.AbsolutePosition.Y, collapsed = collapsed,
+                hidden = not win.Visible, mini = fullSize ~= nil, ix = icon and icon.AbsolutePosition.X, iy = icon and icon.AbsolutePosition.Y}))
         end
         corner(win, 6)
         local title = mk("TextLabel", {Size = UDim2.new(1, 0, 0, 30), BackgroundColor3 = C.accent, BorderSizePixel = 0, TextColor3 = C.fg,
@@ -318,7 +337,7 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
         -- Round button: tap = hide / show the menu, drag = move it. One per menu, stacked down the left edge.
         local nTabs = 0
         for _ in pairs(tabs) do nTabs = nTabs + 1 end
-        local icon = mk("TextButton", {Size = UDim2.new(0, 46, 0, 46), Position = UDim2.new(0, 10, 0.35, (nTabs - 1) * 54),
+        icon = mk("TextButton", {Size = UDim2.new(0, 46, 0, 46), Position = UDim2.new(0, 10, 0.35, (nTabs - 1) * 54),
             BackgroundColor3 = C.accent, BorderSizePixel = 0, Text = name == "Apocalypse" and "STA" or name:sub(1, 3),
             TextColor3 = Color3.new(1, 1, 1), TextStrokeColor3 = Color3.new(0, 0, 0), TextStrokeTransparency = 0,
             Font = Enum.Font.GothamBlack, TextSize = 16, AutoButtonColor = false, ZIndex = 50}, sg)
@@ -329,7 +348,12 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
         dragger(icon, function() ip0, moved = icon.Position, false end, function(dx, dy)
             if math.abs(dx) + math.abs(dy) > 8 then moved = true end
             if moved then icon.Position = ip0 + UDim2.new(0, dx, 0, dy) end
-        end)
+        end, saveLayout)
+        -- Owner 2026-11-26: the round button stays where it was dragged (Position and AbsolutePosition share one frame here, so the
+        -- saved AbsolutePosition puts it back on the same spot).
+        if tonumber(lay.ix) and tonumber(lay.iy) then
+            icon.Position = UDim2.new(0, math.clamp(lay.ix, 0, vp.X - 46), 0, math.clamp(lay.iy, 0, vp.Y - 46))
+        end
         on(icon.MouseButton1Click, function() if not moved then win.Visible = not win.Visible end end)
         -- Quick toggles (owner): a small tab under the round button opens a list; tap a name to switch it on / off.
         -- It hangs under the newest button (the lowest one), so it never covers the other button. A row hides when
@@ -422,13 +446,21 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
                 PaddingRight = UDim.new(0, 10)}, f)
             cols[side] = f
         end
-        on(minBtn.MouseButton1Click, function()
+        local function minimize()
             local mini = cols.Left.Visible
             for _, f in pairs(cols) do f.Visible = not mini end
             grip.Visible = not mini
             minBtn.Text = mini and "+" or "-"
-            if mini then fullSize = win.Size; win.Size = UDim2.new(0, win.AbsoluteSize.X, 0, 30) else win.Size, fullSize = fullSize, nil end
-        end)
+            if mini then fullSize = win.Size; win.Size = UDim2.new(0, win.Size.X.Offset, 0, 30) else win.Size, fullSize = fullSize, nil end
+            saveLayout()
+        end
+        on(minBtn.MouseButton1Click, minimize)
+        -- Misc "Remember menu open / minimized" (owner 2026-11-26): come back hidden / minimized like it was left.
+        if vals.misc_remember ~= false then
+            if lay.mini == true then minimize() end
+            if lay.hidden == true then win.Visible = false end
+        end
+        on(win:GetPropertyChangedSignal("Visible"), saveLayout)
         on(UIS.InputBegan, function(i, typing)
             if not typing and i.KeyCode == Enum.KeyCode.RightAlt then win.Visible = not win.Visible end
         end)
@@ -2626,7 +2658,7 @@ local function startApocHelper()
 -- Found in the game's ItemInteractClient / BackpackClient (dump\9098570654). AdjustBackpack with nil = UNSTORE (drops
 -- the bag's contents), so it is only ever called with an item. Log: C:\matcha\workspace\apoc_log.txt.
 -- Notes for Claude: D:\NPCHitBoxExpander\Documentation.md.
-local VERSION = "2026-11-25.28"  -- bump on every edit so the log shows which copy ran
+local VERSION = "2026-11-26.1"  -- bump on every edit so the log shows which copy ran
 local GAME_ID = 9098570654
 
 local Players     = game:GetService("Players")
@@ -5609,7 +5641,7 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
                     local tile = best and tileUnder(best)
                     -- Owner (v-25zzzzzzzzzzzzzzzzzz): a Scrap Pile (workspace.Structures) gives 15 scrap when broken, 4 =
                     -- 60. With scrap still needed, a melee weapon in the bag and no ground scrap / battery within 30
-                    -- studs, the nearest Scrap Pile is walked to (stop 8 studs short) and Kill Aura's melee breaks it;
+                    -- studs, the nearest Scrap Pile is walked to (stop 5 studs short; 8 left mobile players too far to grab the drops) and Kill Aura's melee breaks it;
                     -- Auto Pickup takes what drops. Not broken in 10 s = left alone 60 s. No pile = ground items.
                     local pile, pileAt, pileD
                     if needScrap and (not best or bestD > 30) then
@@ -5633,7 +5665,7 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
                         step("loot: break a Scrap Pile")
                         doing("walking to a Scrap Pile (" .. math.floor(pileD) .. " studs)")
                         local fl = flat(pileAt - hrp.Position)
-                        local stand = fl.Magnitude > 8 and (pileAt - fl.Unit * 8) or hrp.Position
+                        local stand = fl.Magnitude > 5 and (pileAt - fl.Unit * 5) or hrp.Position
                         local sc0 = sc
                         wantMelee = true
                         go(Vector3.new(stand.X, hrp.Position.Y, stand.Z), 25)
@@ -5938,8 +5970,12 @@ UI.AddTab("Apocalypse", function(tab)
         sec:Combo(id("part"), "Hitbox Part", PARTS, cfg.partIndex - 1)
         sec:SliderFloat(id("size"), "Hitbox Size", 1, 25, cfg.hitboxSize, "%.1f")
         sec:SliderInt(id("dist"), "Max Distance", 1, 5000, cfg.maxDistance)
-        sec:Toggle(id("fovOn"), "Camera Field Of View", cfg.fovOn)
-        sec:SliderInt(id("fov"), "FOV Amount", 70, 120, cfg.fov)
+        -- Owner 2026-11-26: on the other-executor copy the FOV lives in the menu's Misc section (drawn by the shim).
+        local function fovUI(s)
+            s:Toggle(id("fovOn"), "Camera Field Of View", cfg.fovOn)
+            s:SliderInt(id("fov"), "FOV Amount", 70, 120, cfg.fov)
+        end
+        if EXEC_COPY then _G.HBX_MISC_UI = fovUI else fovUI(sec) end
         sec:Button("Scan World (debug)", function() task.spawn(function() scanWorld("button") end) end)
         if IS_PRO then  -- Owner 2026-11-18: Kill Aura is Pro-only, hidden on Regular
             sec = tab:Section("Kill Aura", "Left")  -- owner 2026-11-25: its own section with its own title

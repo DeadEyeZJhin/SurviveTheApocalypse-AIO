@@ -1,11 +1,11 @@
 local IS_APOC = game.GameId == 9098570654; local Players = game:GetService("Players")
 if not game:IsLoaded() then game.Loaded:Wait() end; while not Players.LocalPlayer do task.wait() end; local LocalPlayer = Players.LocalPlayer
 
--- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-27.16.
+-- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-27.17.
 -- Install: put this file in your executor's autoexec folder or run it in a match. Own menu window: Right Alt hides / shows it. V = Speed, N = Noclip.
 -- Runs only in Survive the Apocalypse. Settings go to the executor's workspace folder. Use at your own risk: it sends the game's own messages (pickup, crates) and the game has an anti-cheat. Vibecoded.
 local NO_LOGS = true  -- true = no log files and no console lines (public copy)
-local VERSION = "aio-2026-11-27.16"  -- bump on every edit so the log shows which copy ran
+local VERSION = "aio-2026-11-27.17"  -- bump on every edit so the log shows which copy ran
 local GAME_ID, LOG_FILE, APOC_DIR = "", "hbx_log.txt", "SurviveTheApocalypse"
 local logDirOk, logDirErr = pcall(function()
     local ok, id = pcall(function() return game.GameId end); if not ok or not id or id == 0 then id = game.PlaceId end
@@ -162,7 +162,7 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
     -- Drive through the play-zone border (owner, 2026-11-25, Explorer: workspace.Map.Border holds Border, Invis,
     -- Visual1-3 and folders 1-3). Every part in it loses collision and touch on your side only, so your car (your
     -- game moves it) passes through. Re-applied every second in case the game resets them; put back when turned off.
-    vals.move_border = savedMove.border == true  -- remembered like the settings (owner); Speed / Noclip always start off
+    vals.move_border = savedMove.border == true  -- remembered like the settings (owner); every switch on / off is also in keys.json
     local borderOff, borderNext, savedBorder = {}, 0, vals.move_border
     -- Misc (owner, 2026-11-26), saved in the same file: remember the menu open / minimized, and the camera sees
     -- through walls (Roblox's own Invisicam: walls between camera and you turn see-through, the camera never zooms in).
@@ -203,14 +203,57 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
         for p in pairs(offParts) do pcall(function() p.CanCollide = true end) end
         offParts = {}
     end
+    -- Keys & quick access (owner 2026-11-27): every switch below gets a key you pick in the menu (click it, press a
+    -- key; Esc or Backspace = no key), a "show in quick access" box, and its on / off is remembered. Saved in
+    -- keys.json. Kill Aura and Auto Loot also keep their own keys from their own sections.
+    local KEY_FILE = "SurviveTheApocalypse/keys.json"
+    local BINDS = {{"Speed", "^move_speedOn$", "V", true}, {"Noclip", "^move_noclip$", "N", true},
+        {"Car fly", "^move_carFly$", "B", false}, {"Drive through", "^move_border$", "None", false},
+        {"Kill Aura", "^hbx_killOn_", "None", true}, {"Auto Loot", "^apoc_on_", "None", true},
+        {"ESP", "^apoc_espOn_", "None", true}}
+    local savedKeys = {}
+    pcall(function() savedKeys = HS:JSONDecode(readfile(KEY_FILE)) end)
+    for _, b in ipairs({"keys", "quick", "on"}) do if type(savedKeys[b]) ~= "table" then savedKeys[b] = {} end end
+    for _, b in ipairs(BINDS) do
+        vals["key_" .. b[1]] = type(savedKeys.keys[b[1]]) == "string" and savedKeys.keys[b[1]] or b[3]
+        if savedKeys.quick[b[1]] ~= nil then vals["qa_" .. b[1]] = savedKeys.quick[b[1]] == true else vals["qa_" .. b[1]] = b[4] end
+    end
+    local function bindKey(pat)  -- the menu value behind a switch; Kill Aura / Auto Loot / ESP ids end in the run number
+        for k in pairs(vals) do if type(k) == "string" and k:find(pat) then return k end end
+    end
+    local capture  -- name of the switch waiting for its new key
+    local restored, keysSaved = {}, nil
+    conns[#conns + 1] = RS.Heartbeat:Connect(function()
+        local data = {keys = {}, quick = {}, on = {}}
+        for _, b in ipairs(BINDS) do
+            local k = bindKey(b[2])
+            -- put back the remembered on / off once the switch exists (other parts of the script create theirs later)
+            if k and not restored[b[1]] then
+                restored[b[1]] = true
+                if savedKeys.on[b[1]] ~= nil then vals[k] = savedKeys.on[b[1]] == true end
+            end
+            data.keys[b[1]], data.quick[b[1]] = vals["key_" .. b[1]], vals["qa_" .. b[1]] == true
+            if k then data.on[b[1]] = vals[k] == true else data.on[b[1]] = savedKeys.on[b[1]] end
+        end
+        local json = HS:JSONEncode(data)
+        if json ~= keysSaved then keysSaved = json; pcall(writefile, KEY_FILE, json) end
+    end)
     conns[#conns + 1] = UIS.InputBegan:Connect(function(i, typing)
-        if typing then return end
-        local key = i.KeyCode == Enum.KeyCode.V and "move_speedOn" or i.KeyCode == Enum.KeyCode.N and "move_noclip"
-            or i.KeyCode == Enum.KeyCode.B and "move_carFly"
-        if not key then return end
-        vals[key] = not vals[key]
-        local label = {move_speedOn = "Speed ", move_noclip = "Noclip ", move_carFly = "Car fly "}
-        notify(label[key] .. (vals[key] and "on" or "off"), "Movement", 2)
+        if typing or i.UserInputType ~= Enum.UserInputType.Keyboard then return end
+        if capture then
+            local n = (i.KeyCode == Enum.KeyCode.Escape or i.KeyCode == Enum.KeyCode.Backspace) and "None" or i.KeyCode.Name
+            vals["key_" .. capture] = n
+            notify(capture .. " key: " .. n, "Keys", 2)
+            capture = nil
+            return
+        end
+        for _, b in ipairs(BINDS) do
+            local k = vals["key_" .. b[1]] == i.KeyCode.Name and bindKey(b[2])
+            if k then
+                vals[k] = not vals[k]
+                notify(b[1] .. (vals[k] and " on" or " off"), "Keys", 2)
+            end
+        end
     end)
     conns[#conns + 1] = RS.Stepped:Connect(function()
         local ch = LP.Character
@@ -368,16 +411,24 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
     end)
     local function moveMenu(tab)
         local s = tab:Section("Movement", "Left")
-        s:Toggle("move_speedOn", "Speed (V)", false)
+        s:Toggle("move_speedOn", "Speed (" .. tostring(vals.key_Speed) .. ")", false)
         s:SliderFloat("move_speed", "Walk speed", 16, 120, 30, "%.1f")
-        s:Toggle("move_noclip", "Noclip (N)", false)
-        s:Toggle("move_border", "Drive through the map border and buildings (remembered)", false)
-        s:Toggle("move_carFly", "Car fly (B, remembered) - while driving: E up, Q down", false)
+        s:Toggle("move_noclip", "Noclip (" .. tostring(vals.key_Noclip) .. ")", false)
+        s:Toggle("move_border", "Drive through the map border and buildings", false)
+        s:Toggle("move_carFly", "Car fly (" .. tostring(vals["key_Car fly"]) .. ") - while driving: E up, Q down", false)
         s:SliderFloat("move_flySpeed", "Car fly speed", 30, 500, 150, "%.0f")
         s = tab:Section("Misc", "Left")
         s:Toggle("misc_remember", "Remember menu open / minimized", true)
         s:Toggle("misc_camClip", "Camera sees through walls", false)
         if _G.HBX_MISC_UI then _G.HBX_MISC_UI(s) end  -- Camera FOV, from the hitbox part
+        s = tab:Section("Keys & quick access", "Left")
+        s:Text("Click a key button, then press the new key (Esc = no key). Every switch here is remembered.")
+        for _, b in ipairs(BINDS) do
+            local n = b[1]
+            s:Button(n .. " key:  " .. (capture == n and "press a key..." or tostring(vals["key_" .. n])),
+                function() capture = n end)
+            s:Toggle("qa_" .. n, n .. " in quick access", b[4])
+        end
     end
 
     UI = {}
@@ -519,13 +570,12 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
                 return function() local k = keyOf("^hbx_auraGuide_"); g.BackgroundColor3 = k and vals[k] and C.accent or C.row end
             end,
         }
-        for i, q in ipairs({{"Speed", "^move_speedOn$"}, {"Noclip", "^move_noclip$"}, {"Kill Aura", "^hbx_killOn_"},
-                {"Auto Loot", "^apoc_on_"}, {"ESP", "^apoc_espOn_"}}) do
+        for i, q in ipairs(BINDS) do
             local b = mk("TextButton", {Size = UDim2.new(1, 0, 0, 22), BackgroundColor3 = C.row, BorderSizePixel = 0, LayoutOrder = i,
                 Text = q[1], TextColor3 = C.fg, Font = Enum.Font.GothamBold, TextSize = 12, AutoButtonColor = false, ZIndex = 50,
                 Visible = false}, list)
             corner(b, 4)
-            local r = {b = b, pat = q[2]}
+            local r = {b = b, pat = q[2], name = q[1]}
             rows[#rows + 1] = r
             on(b.MouseButton1Click, function() flip(q[2]) end)
             if sides[q[1]] then
@@ -551,7 +601,7 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
             if not open then return end
             for _, r in ipairs(rows) do
                 local k = keyOf(r.pat)
-                r.b.Visible = k ~= nil
+                r.b.Visible = k ~= nil and vals["qa_" .. r.name] == true
                 r.b.BackgroundColor3 = k and vals[k] and C.accent or C.row
                 if r.refresh and k then r.refresh() end
             end
@@ -2788,7 +2838,7 @@ local function startApocHelper()
 -- Found in the game's ItemInteractClient / BackpackClient (dump\9098570654). AdjustBackpack with nil = UNSTORE (drops
 -- the bag's contents), so it is only ever called with an item. Log: C:\matcha\workspace\apoc_log.txt.
 -- Notes for Claude: D:\NPCHitBoxExpander\Documentation.md.
-local VERSION = "2026-11-27.16"  -- bump on every edit so the log shows which copy ran
+local VERSION = "2026-11-27.17"  -- bump on every edit so the log shows which copy ran
 local GAME_ID = 9098570654
 
 local Players     = game:GetService("Players")

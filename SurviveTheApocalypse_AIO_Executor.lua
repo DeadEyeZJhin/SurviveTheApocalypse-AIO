@@ -1,11 +1,11 @@
 local IS_APOC = game.GameId == 9098570654; local Players = game:GetService("Players")
 if not game:IsLoaded() then game.Loaded:Wait() end; while not Players.LocalPlayer do task.wait() end; local LocalPlayer = Players.LocalPlayer
 
--- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-26.22.
+-- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-27.1.
 -- Install: put this file in your executor's autoexec folder or run it in a match. Own menu window: Right Alt hides / shows it. V = Speed, N = Noclip.
 -- Runs only in Survive the Apocalypse. Settings go to the executor's workspace folder. Use at your own risk: it sends the game's own messages (pickup, crates) and the game has an anti-cheat. Vibecoded.
 local NO_LOGS = true  -- true = no log files and no console lines (public copy)
-local VERSION = "aio-2026-11-26.22"  -- bump on every edit so the log shows which copy ran
+local VERSION = "aio-2026-11-27.1"  -- bump on every edit so the log shows which copy ran
 local GAME_ID, LOG_FILE, APOC_DIR = "", "hbx_log.txt", "SurviveTheApocalypse"
 local logDirOk, logDirErr = pcall(function()
     local ok, id = pcall(function() return game.GameId end); if not ok or not id or id == 0 then id = game.PlaceId end
@@ -174,8 +174,18 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
         for p, o in pairs(borderOff) do pcall(function() p.CanCollide, p.CanTouch = o[1], o[2] end) end
         borderOff = {}
     end
+    -- Owner 2026-11-27: with "through the map border" on, the car you sit in also drives through buildings and
+    -- everything else. Parts near the car that stand more than 3 studs above its wheels lose collision on your side;
+    -- the part right under the car (floor, road) always stays solid. Put back once behind you, out of the car, or off.
+    local carOff, carNext = {}, 0
+    local function restoreCar(keep)
+        for p, c in pairs(carOff) do
+            if not (keep and keep[p]) then pcall(function() p.CanCollide = c end); carOff[p] = nil end
+        end
+    end
     local function restoreMove()
         restoreBorder()
+        restoreCar()
         if camClipOn then pcall(function() LP.DevCameraOcclusionMode = origOcclusion end); camClipOn = false end
         local hum = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
         if hum and origSpeed then pcall(function() hum.WalkSpeed = origSpeed end) end
@@ -201,7 +211,35 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
             hum.WalkSpeed = origSpeed
             origSpeed = nil
         end
-        if vals.move_noclip and ch then
+        local seat = vals.move_border and hum and hum.SeatPart
+        local car = seat and seat:FindFirstAncestorOfClass("Model")
+        while car and car.Parent and car.Parent ~= workspace and car.Parent:IsA("Model") do car = car.Parent end
+        if car and os.clock() >= carNext then
+            carNext = os.clock() + 0.1
+            local cf, size = car:GetBoundingBox()
+            local wheels = cf.Position.Y - size.Y / 2
+            local skip = {car, ch, workspace.Terrain}
+            local rp = RaycastParams.new()
+            rp.FilterType, rp.FilterDescendantsInstances = Enum.RaycastFilterType.Exclude, skip
+            local under = workspace:Raycast(cf.Position, Vector3.new(0, -50, 0), rp)
+            local op = OverlapParams.new()
+            op.FilterType, op.FilterDescendantsInstances = Enum.RaycastFilterType.Exclude, skip
+            local keep = {}
+            -- shortcut: top = centre + half height, rotated parts read a bit off; a steep ramp ahead may go see-through.
+            for _, p in ipairs(workspace:GetPartBoundsInRadius(cf.Position, size.Magnitude / 2 + 30, op)) do
+                local m = p:FindFirstAncestorOfClass("Model")
+                if p ~= (under and under.Instance) and p.Position.Y + p.Size.Y / 2 > wheels + 3
+                        and not (m and m:FindFirstChildOfClass("Humanoid")) and (carOff[p] ~= nil or p.CanCollide) then
+                    if carOff[p] == nil then carOff[p] = p.CanCollide end
+                    keep[p] = true
+                    p.CanCollide = false
+                end
+            end
+            restoreCar(keep)
+        elseif not car and next(carOff) then
+            restoreCar()
+        end
+        if (vals.move_noclip or car) and ch then
             for _, p in ipairs(ch:GetDescendants()) do
                 if p:IsA("BasePart") and p.CanCollide then p.CanCollide = false; offParts[p] = true end
             end
@@ -252,7 +290,7 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
         s:Toggle("move_speedOn", "Speed (V)", false)
         s:SliderFloat("move_speed", "Walk speed", 16, 120, 30, "%.1f")
         s:Toggle("move_noclip", "Noclip (N)", false)
-        s:Toggle("move_border", "Drive through the map border (remembered)", false)
+        s:Toggle("move_border", "Drive through the map border and buildings (remembered)", false)
         s = tab:Section("Misc", "Left")
         s:Toggle("misc_remember", "Remember menu open / minimized", true)
         s:Toggle("misc_camClip", "Camera sees through walls", false)
@@ -2658,7 +2696,7 @@ local function startApocHelper()
 -- Found in the game's ItemInteractClient / BackpackClient (dump\9098570654). AdjustBackpack with nil = UNSTORE (drops
 -- the bag's contents), so it is only ever called with an item. Log: C:\matcha\workspace\apoc_log.txt.
 -- Notes for Claude: D:\NPCHitBoxExpander\Documentation.md.
-local VERSION = "2026-11-26.22"  -- bump on every edit so the log shows which copy ran
+local VERSION = "2026-11-27.1"  -- bump on every edit so the log shows which copy ran
 local GAME_ID = 9098570654
 
 local Players     = game:GetService("Players")
@@ -4639,8 +4677,11 @@ local function readMenu()
     v = UI.GetValue(id("weapon"));      if type(v) == "boolean" then cfg.weapon = v end
     v = UI.GetValue(id("bagUp"));       if type(v) == "boolean" then cfg.bagUp = v end
     v = UI.GetValue(id("crates"));      if type(v) == "boolean" then cfg.crates = v end
+    -- Owner 2026-11-27: the quick ESP button did nothing until the ESP page had been opened once (the switch did not
+    -- exist yet, and espOn was only read after that page was drawn). Make the switch now and read it always.
+    if UI.GetValue(id("espOn")) == nil then pcall(UI.SetValue, id("espOn"), cfg.espOn) end
+    v = UI.GetValue(id("espOn"));   if type(v) == "boolean" then cfg.espOn = v end
     if espDrawn then
-        v = UI.GetValue(id("espOn"));   if type(v) == "boolean" then cfg.espOn = v end
         v = UI.GetValue(id("espDist")); if type(v) == "number" then cfg.espDist = v end
         v = UI.GetValue(id("goodScrap"))
         if type(v) == "string" and v ~= cfg.goodScrap then  -- names changed: sort every item again

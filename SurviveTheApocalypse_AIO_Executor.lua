@@ -1,11 +1,11 @@
 local IS_APOC = game.GameId == 9098570654; local Players = game:GetService("Players")
 if not game:IsLoaded() then game.Loaded:Wait() end; while not Players.LocalPlayer do task.wait() end; local LocalPlayer = Players.LocalPlayer
 
--- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-27.6.
+-- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-27.7.
 -- Install: put this file in your executor's autoexec folder or run it in a match. Own menu window: Right Alt hides / shows it. V = Speed, N = Noclip.
 -- Runs only in Survive the Apocalypse. Settings go to the executor's workspace folder. Use at your own risk: it sends the game's own messages (pickup, crates) and the game has an anti-cheat. Vibecoded.
 local NO_LOGS = true  -- true = no log files and no console lines (public copy)
-local VERSION = "aio-2026-11-27.6"  -- bump on every edit so the log shows which copy ran
+local VERSION = "aio-2026-11-27.7"  -- bump on every edit so the log shows which copy ran
 local GAME_ID, LOG_FILE, APOC_DIR = "", "hbx_log.txt", "SurviveTheApocalypse"
 local logDirOk, logDirErr = pcall(function()
     local ok, id = pcall(function() return game.GameId end); if not ok or not id or id == 0 then id = game.PlaceId end
@@ -175,8 +175,11 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
         borderOff = {}
     end
     -- Owner 2026-11-27: with "through the map border" on, the car you sit in also drives through buildings and
-    -- everything else. Parts near the car that stand more than 3 studs above its wheels lose collision on your side;
-    -- the part right under the car (floor, road) always stays solid. Put back once behind you, out of the car, or off.
+    -- everything else. Parts near the car whose top is above its wheels lose collision on your side; the part right
+    -- under the car and the map's ground (names below, from a live scan of Map.Tiles) always stay solid.
+    -- Put back once behind you, out of the car, or off.
+    local GROUND = {plane = true, tile = true, collidefloor = true, floor = true, mound = true,
+        road = true, sidewalk = true, curb = true}
     local carOff, carNext = {}, 0
     local function restoreCar(keep)
         for p, c in pairs(carOff) do
@@ -233,7 +236,8 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
             -- shortcut: top = centre + half height, rotated parts read a bit off; a steep ramp ahead may go see-through.
             for _, p in ipairs(workspace:GetPartBoundsInRadius(cf.Position, size.Magnitude / 2 + 30, op)) do
                 local m = p:FindFirstAncestorOfClass("Model")
-                if p ~= (under and under.Instance) and p.Position.Y + p.Size.Y / 2 > wheels + 3
+                if p ~= (under and under.Instance) and p.Position.Y + p.Size.Y / 2 > wheels + 0.5
+                        and not GROUND[p.Name:lower():match("^%d*(%a+)")]
                         and not (m and m:FindFirstChildOfClass("Humanoid")) then
                     -- no CanCollide gate: builds' hidden PlacementHitbox may be switched on by the game while driving
                     if carOff[p] == nil then carOff[p] = p.CanCollide end
@@ -2713,7 +2717,7 @@ local function startApocHelper()
 -- Found in the game's ItemInteractClient / BackpackClient (dump\9098570654). AdjustBackpack with nil = UNSTORE (drops
 -- the bag's contents), so it is only ever called with an item. Log: C:\matcha\workspace\apoc_log.txt.
 -- Notes for Claude: D:\NPCHitBoxExpander\Documentation.md.
-local VERSION = "2026-11-27.6"  -- bump on every edit so the log shows which copy ran
+local VERSION = "2026-11-27.7"  -- bump on every edit so the log shows which copy ran
 local GAME_ID = 9098570654
 
 local Players     = game:GetService("Players")

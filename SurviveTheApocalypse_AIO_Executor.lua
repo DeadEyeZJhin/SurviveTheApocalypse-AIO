@@ -1,11 +1,11 @@
 local IS_APOC = game.GameId == 9098570654; local Players = game:GetService("Players")
 if not game:IsLoaded() then game.Loaded:Wait() end; while not Players.LocalPlayer do task.wait() end; local LocalPlayer = Players.LocalPlayer
 
--- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-27.1.
+-- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-27.2.
 -- Install: put this file in your executor's autoexec folder or run it in a match. Own menu window: Right Alt hides / shows it. V = Speed, N = Noclip.
 -- Runs only in Survive the Apocalypse. Settings go to the executor's workspace folder. Use at your own risk: it sends the game's own messages (pickup, crates) and the game has an anti-cheat. Vibecoded.
 local NO_LOGS = true  -- true = no log files and no console lines (public copy)
-local VERSION = "aio-2026-11-27.1"  -- bump on every edit so the log shows which copy ran
+local VERSION = "aio-2026-11-27.2"  -- bump on every edit so the log shows which copy ran
 local GAME_ID, LOG_FILE, APOC_DIR = "", "hbx_log.txt", "SurviveTheApocalypse"
 local logDirOk, logDirErr = pcall(function()
     local ok, id = pcall(function() return game.GameId end); if not ok or not id or id == 0 then id = game.PlaceId end
@@ -2499,9 +2499,11 @@ end
 -- ["Crashed Car 2"]. Runs only when no gun is in hand. Every structure in reach is a target (owner: the game itself
 -- refuses hits on your own / friendly structures).
 -- One swing every frame: the speed test (games 73/75/78) gave more damage per second than one per 0.25 s.
+-- Owner 2026-11-27: every frame lagged badly in big waves (scan of every zombie and structure + 2 remotes, 60 a
+-- second). Now one swing per MELEE_GAP s, still 2.5x faster than the 0.25 s that did less damage.
 -- shortcut: 3 targets a swing is from the Remote Spy captures (1-3 seen); raise it if the game takes more.
-local MELEE_MAX = 3
-local melee = {sent = 0}
+local MELEE_MAX, MELEE_GAP = 3, 0.1
+local melee = {sent = 0, next = 0}
 local function meleeInHand()
     local c = LocalPlayer.Character
     for _, t in ipairs(c and c:GetChildren() or {}) do
@@ -2510,6 +2512,8 @@ local function meleeInHand()
     return nil
 end
 local function meleeStep(tool, now)
+    if now < melee.next then return end
+    melee.next = now + MELEE_GAP
     local c = LocalPlayer.Character
     local h = c and c:FindFirstChild("HumanoidRootPart")
     if not h then return end
@@ -2696,7 +2700,7 @@ local function startApocHelper()
 -- Found in the game's ItemInteractClient / BackpackClient (dump\9098570654). AdjustBackpack with nil = UNSTORE (drops
 -- the bag's contents), so it is only ever called with an item. Log: C:\matcha\workspace\apoc_log.txt.
 -- Notes for Claude: D:\NPCHitBoxExpander\Documentation.md.
-local VERSION = "2026-11-27.1"  -- bump on every edit so the log shows which copy ran
+local VERSION = "2026-11-27.2"  -- bump on every edit so the log shows which copy ran
 local GAME_ID = 9098570654
 
 local Players     = game:GetService("Players")
@@ -6594,7 +6598,14 @@ pcall(function()
             killRelease()
             return
         end
+        local t0 = os.clock()
         local ok, err = try(aimOrKill)
+        -- Owner 2026-11-27 lag in big waves: log slow Kill Aura frames (at most one line per 10 s) to find what costs.
+        local took = os.clock() - t0
+        if took > 0.02 and t0 >= (kill.slowLogAt or 0) then
+            kill.slowLogAt = t0 + 10
+            log(string.format("Kill Aura slow frame: %d ms, %s", took * 1000, tostring(kill.status)))
+        end
         if ok then ok, err = try(aimLabelFrame) end
         if ok then ok, err = try(auraRingFrame) end
         if not ok and not aimErrorShown then aimErrorShown = true; alert("Aim error: " .. tostring(err)) end

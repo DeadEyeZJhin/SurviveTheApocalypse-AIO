@@ -1,11 +1,11 @@
 local IS_APOC = game.GameId == 9098570654; local Players = game:GetService("Players")
 if not game:IsLoaded() then game.Loaded:Wait() end; while not Players.LocalPlayer do task.wait() end; local LocalPlayer = Players.LocalPlayer
 
--- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-27.8.
+-- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-27.9.
 -- Install: put this file in your executor's autoexec folder or run it in a match. Own menu window: Right Alt hides / shows it. V = Speed, N = Noclip.
 -- Runs only in Survive the Apocalypse. Settings go to the executor's workspace folder. Use at your own risk: it sends the game's own messages (pickup, crates) and the game has an anti-cheat. Vibecoded.
 local NO_LOGS = true  -- true = no log files and no console lines (public copy)
-local VERSION = "aio-2026-11-27.8"  -- bump on every edit so the log shows which copy ran
+local VERSION = "aio-2026-11-27.9"  -- bump on every edit so the log shows which copy ran
 local GAME_ID, LOG_FILE, APOC_DIR = "", "hbx_log.txt", "SurviveTheApocalypse"
 local logDirOk, logDirErr = pcall(function()
     local ok, id = pcall(function() return game.GameId end); if not ok or not id or id == 0 then id = game.PlaceId end
@@ -154,7 +154,7 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
     local MOVE_FILE = "SurviveTheApocalypse/movement.json"
     local HS, RS = game:GetService("HttpService"), game:GetService("RunService")
     local conns = {}
-    vals.move_speedOn, vals.move_noclip, vals.move_speed = false, false, 30
+    vals.move_speedOn, vals.move_noclip, vals.move_speed, vals.move_carFly = false, false, 30, false
     local savedMove = {}
     pcall(function() savedMove = HS:JSONDecode(readfile(MOVE_FILE)) end)
     vals.move_speed = tonumber(savedMove.speed) or 30
@@ -258,6 +258,18 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
         elseif not car and next(carOff) then
             restoreCar()
         end
+        -- Car fly (owner 2026-11-27): while driving, W/S forward/back, A/D turn, E up, Q down; hovers when no key is held.
+        -- Space, Ctrl, Shift and F are taken by the game. Your game owns the car, so setting its speed here moves it.
+        -- shortcut: fixed 60 studs/s forward and 30 up/down; add a slider if the owner wants it faster or slower.
+        local flySeat = vals.move_carFly and hum and hum.SeatPart
+        if flySeat and not UIS:GetFocusedTextBox() then
+            local K = Enum.KeyCode
+            local function key(k) return UIS:IsKeyDown(k) and 1 or 0 end
+            local look = flySeat.CFrame.LookVector
+            look = Vector3.new(look.X, 0, look.Z).Unit
+            flySeat.AssemblyLinearVelocity = look * (key(K.W) - key(K.S)) * 60 + Vector3.new(0, (key(K.E) - key(K.Q)) * 30, 0)
+            flySeat.AssemblyAngularVelocity = Vector3.new(0, (key(K.A) - key(K.D)) * 2, 0)
+        end
         if (vals.move_noclip or car) and ch then
             for _, p in ipairs(ch:GetDescendants()) do
                 if p:IsA("BasePart") and p.CanCollide then p.CanCollide = false; offParts[p] = true end
@@ -310,6 +322,7 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
         s:SliderFloat("move_speed", "Walk speed", 16, 120, 30, "%.1f")
         s:Toggle("move_noclip", "Noclip (N)", false)
         s:Toggle("move_border", "Drive through the map border and buildings (remembered)", false)
+        s:Toggle("move_carFly", "Car fly (while driving: E up, Q down)", false)
         s = tab:Section("Misc", "Left")
         s:Toggle("misc_remember", "Remember menu open / minimized", true)
         s:Toggle("misc_camClip", "Camera sees through walls", false)
@@ -2719,7 +2732,7 @@ local function startApocHelper()
 -- Found in the game's ItemInteractClient / BackpackClient (dump\9098570654). AdjustBackpack with nil = UNSTORE (drops
 -- the bag's contents), so it is only ever called with an item. Log: C:\matcha\workspace\apoc_log.txt.
 -- Notes for Claude: D:\NPCHitBoxExpander\Documentation.md.
-local VERSION = "2026-11-27.8"  -- bump on every edit so the log shows which copy ran
+local VERSION = "2026-11-27.9"  -- bump on every edit so the log shows which copy ran
 local GAME_ID = 9098570654
 
 local Players     = game:GetService("Players")

@@ -1,11 +1,11 @@
 local IS_APOC = game.GameId == 9098570654; local Players = game:GetService("Players")
 if not game:IsLoaded() then game.Loaded:Wait() end; while not Players.LocalPlayer do task.wait() end; local LocalPlayer = Players.LocalPlayer
 
--- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-27.15.
+-- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-27.16.
 -- Install: put this file in your executor's autoexec folder or run it in a match. Own menu window: Right Alt hides / shows it. V = Speed, N = Noclip.
 -- Runs only in Survive the Apocalypse. Settings go to the executor's workspace folder. Use at your own risk: it sends the game's own messages (pickup, crates) and the game has an anti-cheat. Vibecoded.
 local NO_LOGS = true  -- true = no log files and no console lines (public copy)
-local VERSION = "aio-2026-11-27.15"  -- bump on every edit so the log shows which copy ran
+local VERSION = "aio-2026-11-27.16"  -- bump on every edit so the log shows which copy ran
 local GAME_ID, LOG_FILE, APOC_DIR = "", "hbx_log.txt", "SurviveTheApocalypse"
 local logDirOk, logDirErr = pcall(function()
     local ok, id = pcall(function() return game.GameId end); if not ok or not id or id == 0 then id = game.PlaceId end
@@ -353,49 +353,6 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
                 flySpeed = tonumber(vals.move_flySpeed) or 150, carFly = vals.move_carFly == true}))
         end
     end)
-    -- Attribute changer (owner 2026-11-27, for testing): sets your character's attributes while "Lock" is on,
-    -- every 0.5 s so the game can't put them back on your side. Only your side changes: the server keeps its own
-    -- values. Live scan of the game's scripts on your side: only WalkSpeed (WalkSpeedClient) and ReloadSpeed (Power
-    -- Hammer) are read here; damage, defense, dodge, ricochet and perk are worked out on the server.
-    local ATTR_FILE = "SurviveTheApocalypse/attributes.json"
-    local ATTRS = {{"DamageBoost", 5}, {"DamageReduction", 1}, {"Defense", 1}, {"DodgeChance", 1},
-        {"ReloadSpeed", 5}, {"RicochetChance", 1}, {"RicochetMax", 20},
-        -- WalkSpeedClient: walk = 16 + WalkSpeed (studs/s, Nimble gives 0.5), sprint x (1 + SprintSpeed), jump = 50 + JumpPower
-        {"WalkSpeed", 100}, {"SprintSpeed", 3}, {"JumpPower", 150}}
-    local savedAttr = {}
-    pcall(function() savedAttr = HS:JSONDecode(readfile(ATTR_FILE)) end)
-    vals.attr_lock = savedAttr.lock == true
-    for _, a in ipairs(ATTRS) do vals["attr_" .. a[1]] = tonumber(savedAttr[a[1]]) end
-    vals.attr_Perk = type(savedAttr.Perk) == "string" and savedAttr.Perk or nil
-    local attrNext, attrSaved = 0, nil
-    conns[#conns + 1] = RS.Heartbeat:Connect(function()
-        if os.clock() < attrNext then return end
-        attrNext = os.clock() + 0.5
-        local ch = LP.Character
-        local data = {lock = vals.attr_lock == true, Perk = vals.attr_Perk}
-        for _, a in ipairs(ATTRS) do
-            local v = tonumber(vals["attr_" .. a[1]])
-            data[a[1]] = v
-            if vals.attr_lock and ch and v and ch:GetAttribute(a[1]) ~= v then pcall(ch.SetAttribute, ch, a[1], v) end
-        end
-        if vals.attr_lock and ch and data.Perk and data.Perk ~= "" and ch:GetAttribute("Perk") ~= data.Perk then
-            pcall(ch.SetAttribute, ch, "Perk", data.Perk)
-        end
-        local json = HS:JSONEncode(data)
-        if json ~= attrSaved then attrSaved = json; pcall(writefile, ATTR_FILE, json) end
-    end)
-    local function attrMenu(tab)
-        local s = tab:Section("Attributes (your side only)", "Right")
-        s:Toggle("attr_lock", "Lock these values (remembered)", false)
-        local ch = LP.Character
-        -- sliders start at the game's own values, so wait until the character has them (not 0 = WalkSpeed 0)
-        if not (ch and ch:GetAttribute("WalkSpeed")) then s:Text("Waiting for your character..."); return end
-        for _, a in ipairs(ATTRS) do
-            local cur = tonumber(ch and ch:GetAttribute(a[1])) or 0
-            s:SliderFloat("attr_" .. a[1], a[1], 0, math.max(a[2], cur), cur, "%.2f")
-        end
-        s:InputText("attr_Perk", "Perk", tostring(ch and ch:GetAttribute("Perk") or ""))
-    end
     -- Anti AFK in the background (owner, 2026-11-25): Roblox fires LocalPlayer.Idled after 2 min without input; a
     -- VirtualUser click then resets the 20 min idle kick even when Roblox is not the focused window or is minimized.
     -- Follows the menu's Anti AFK toggle (_G.APOC_ANTIAFK). The Space tap in the helper still runs as before.
@@ -421,7 +378,6 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
         s:Toggle("misc_remember", "Remember menu open / minimized", true)
         s:Toggle("misc_camClip", "Camera sees through walls", false)
         if _G.HBX_MISC_UI then _G.HBX_MISC_UI(s) end  -- Camera FOV, from the hitbox part
-        attrMenu(tab)
     end
 
     UI = {}
@@ -2832,7 +2788,7 @@ local function startApocHelper()
 -- Found in the game's ItemInteractClient / BackpackClient (dump\9098570654). AdjustBackpack with nil = UNSTORE (drops
 -- the bag's contents), so it is only ever called with an item. Log: C:\matcha\workspace\apoc_log.txt.
 -- Notes for Claude: D:\NPCHitBoxExpander\Documentation.md.
-local VERSION = "2026-11-27.15"  -- bump on every edit so the log shows which copy ran
+local VERSION = "2026-11-27.16"  -- bump on every edit so the log shows which copy ran
 local GAME_ID = 9098570654
 
 local Players     = game:GetService("Players")

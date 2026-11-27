@@ -1,11 +1,11 @@
 local IS_APOC = game.GameId == 9098570654; local Players = game:GetService("Players")
 if not game:IsLoaded() then game.Loaded:Wait() end; while not Players.LocalPlayer do task.wait() end; local LocalPlayer = Players.LocalPlayer
 
--- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-27.12.
+-- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-27.13.
 -- Install: put this file in your executor's autoexec folder or run it in a match. Own menu window: Right Alt hides / shows it. V = Speed, N = Noclip.
 -- Runs only in Survive the Apocalypse. Settings go to the executor's workspace folder. Use at your own risk: it sends the game's own messages (pickup, crates) and the game has an anti-cheat. Vibecoded.
 local NO_LOGS = true  -- true = no log files and no console lines (public copy)
-local VERSION = "aio-2026-11-27.12"  -- bump on every edit so the log shows which copy ran
+local VERSION = "aio-2026-11-27.13"  -- bump on every edit so the log shows which copy ran
 local GAME_ID, LOG_FILE, APOC_DIR = "", "hbx_log.txt", "SurviveTheApocalypse"
 local logDirOk, logDirErr = pcall(function()
     local ok, id = pcall(function() return game.GameId end); if not ok or not id or id == 0 then id = game.PlaceId end
@@ -185,6 +185,7 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
         road = true, sidewalk = true, curb = true}
     local carOff, carNext = {}, 0
     local flyCar, flyRoots  -- Car fly: the car being flown and its loose physics pieces (body, wheels)
+    local impactCar, impactConns = nil, {}  -- the car whose Impact handler is paused, and those paused connections
     local function restoreCar(keep)
         for p, c in pairs(carOff) do
             if not (keep and keep[p]) then pcall(function() p.CanCollide = c end); carOff[p] = nil end
@@ -193,6 +194,8 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
     local function restoreMove()
         restoreBorder()
         restoreCar()
+        for _, c in ipairs(impactConns) do pcall(function() c:Enable() end) end
+        impactConns, impactCar = {}, nil
         if camClipOn then pcall(function() LP.DevCameraOcclusionMode = origOcclusion end); camClipOn = false end
         local hum = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
         if hum and origSpeed then pcall(function() hum.WalkSpeed = origSpeed end) end
@@ -300,6 +303,20 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
         elseif flyCar then
             flyCar, flyRoots = nil, nil
             if engine and hum and hum.SeatPart then engine.Value = true end
+        end
+        -- Owner 2026-11-27: the car still "hit" scrap, breakables and zombies. The server checks those hits itself
+        -- and sends the car's Impact event, which brakes the car and shakes the camera. While driving through or
+        -- flying, the game's Impact handler is paused (your side only); the server-side damage itself can't be stopped.
+        local hitCar = car or flyCar
+        if hitCar ~= impactCar then
+            for _, c in ipairs(impactConns) do pcall(function() c:Enable() end) end
+            impactConns, impactCar = {}, hitCar
+            local ev = hitCar and hitCar:FindFirstChild("Impact", true)
+            if ev and ev:IsA("RemoteEvent") and type(getconnections) == "function" then
+                pcall(function()
+                    for _, c in ipairs(getconnections(ev.OnClientEvent)) do c:Disable(); impactConns[#impactConns + 1] = c end
+                end)
+            end
         end
         if (vals.move_noclip or car) and ch then
             for _, p in ipairs(ch:GetDescendants()) do
@@ -2562,8 +2579,8 @@ local function turretStep(now, hp)
 end
 -- Melee Kill Aura (owner 2026-11-25, Remote Spy with the Bat): a swing is <tool>.Swing:FireServer(), then
 -- <tool>.HitTargets:FireServer({targets}); seen with 1-3 zombie models, and with workspace.Structures["Scrap Pile"] /
--- ["Crashed Car 2"]. Runs only when no gun is in hand. Every structure in reach is a target (owner: the game itself
--- refuses hits on your own / friendly structures).
+-- ["Crashed Car 2"]. Runs only when no gun is in hand. Breakable structures in reach are targets, players' builds
+-- and cars are skipped (the game refuses those hits).
 -- One swing every frame: the speed test (games 73/75/78) gave more damage per second than one per 0.25 s.
 -- Owner 2026-11-27: every frame lagged badly in big waves (scan of every zombie and structure + 2 remotes, 60 a
 -- second). Now one swing per MELEE_GAP s, still 2.5x faster than the 0.25 s that did less damage.
@@ -2608,17 +2625,22 @@ local function meleeStep(tool, now)
     if #targets < MELEE_MAX then
         local st = workspace:FindFirstChild("Structures")
         local okS, kids = pcall(function() return st and st:GetChildren() or {} end)
+        -- Owner 2026-11-27 (melee could not break Scrap): player builds and cars (attribute Player = true) took the
+        -- few slots and the game refuses those hits. Only breakables (they have a MockHumanoid) count, nearest first.
+        local near = {}
         for _, m in ipairs(okS and kids or {}) do
-            if #targets >= MELEE_MAX then break end
             local okP, piv = pcall(function() return m:GetPivot().Position end)
             -- game76: a broken Scrap Pile stays as debris; Auto Farm marks the ones it broke (no swinging at air)
             -- game77 log: a broken pile gets the attribute Dead = true
             local okD, dead = pcall(function() return m:GetAttribute("Dead") end)
             local broken = (okD and dead == true) or (_G.APOC_BROKEN and _G.APOC_BROKEN[m])
-            if okP and not broken and typeof(piv) == "Vector3" and (piv - hp).Magnitude <= range + 6 then
-                targets[#targets+1] = m
+            local okO, own = pcall(function() return m:GetAttribute("Player") == true or not m:FindFirstChild("MockHumanoid") end)
+            if okP and okO and not own and not broken and typeof(piv) == "Vector3" and (piv - hp).Magnitude <= range + 6 then
+                near[#near+1] = {m = m, d = (piv - hp).Magnitude}
             end
         end
+        table.sort(near, function(x, y) return x.d < y.d end)
+        for i = 1, math.min(#near, MELEE_MAX - #targets) do targets[#targets+1] = near[i].m end
     end
     if #targets == 0 then kill.status = "Kill Aura (melee " .. tool.Name .. "): nothing within " .. math.floor(range) .. " studs"; return end
     pcall(function() tool.Swing:FireServer() end)
@@ -2766,7 +2788,7 @@ local function startApocHelper()
 -- Found in the game's ItemInteractClient / BackpackClient (dump\9098570654). AdjustBackpack with nil = UNSTORE (drops
 -- the bag's contents), so it is only ever called with an item. Log: C:\matcha\workspace\apoc_log.txt.
 -- Notes for Claude: D:\NPCHitBoxExpander\Documentation.md.
-local VERSION = "2026-11-27.12"  -- bump on every edit so the log shows which copy ran
+local VERSION = "2026-11-27.13"  -- bump on every edit so the log shows which copy ran
 local GAME_ID = 9098570654
 
 local Players     = game:GetService("Players")

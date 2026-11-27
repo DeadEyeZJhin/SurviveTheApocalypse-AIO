@@ -1,11 +1,11 @@
 local IS_APOC = game.GameId == 9098570654; local Players = game:GetService("Players")
 if not game:IsLoaded() then game.Loaded:Wait() end; while not Players.LocalPlayer do task.wait() end; local LocalPlayer = Players.LocalPlayer
 
--- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-27.18.
+-- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-27.19.
 -- Install: put this file in your executor's autoexec folder or run it in a match. Own menu window: Right Alt hides / shows it. V = Speed, N = Noclip.
 -- Runs only in Survive the Apocalypse. Settings go to the executor's workspace folder. Use at your own risk: it sends the game's own messages (pickup, crates) and the game has an anti-cheat. Vibecoded.
 local NO_LOGS = true  -- true = no log files and no console lines (public copy)
-local VERSION = "aio-2026-11-27.18"  -- bump on every edit so the log shows which copy ran
+local VERSION = "aio-2026-11-27.19"  -- bump on every edit so the log shows which copy ran
 local GAME_ID, LOG_FILE, APOC_DIR = "", "hbx_log.txt", "SurviveTheApocalypse"
 local logDirOk, logDirErr = pcall(function()
     local ok, id = pcall(function() return game.GameId end); if not ok or not id or id == 0 then id = game.PlaceId end
@@ -520,14 +520,19 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
         local fullSize, icon
         local function saveLayout()
             local s = fullSize or win.Size
+            -- Owner 2026-11-27 (menu back at the top every match): AbsolutePosition is measured below Roblox's top bar,
+            -- but the menu is placed from the very top of the screen, so each save put it 58 px higher. Measure from
+            -- the menu's own screen corner instead, the same frame the saved spot is put back in.
+            local o = sg.AbsolutePosition
             pcall(writefile, LAYOUT_FILE, HS:JSONEncode({w = s.X.Offset, h = s.Y.Offset,
-                x = win.AbsolutePosition.X, y = win.AbsolutePosition.Y, collapsed = collapsed,
-                hidden = not win.Visible, mini = fullSize ~= nil, ix = icon and icon.AbsolutePosition.X, iy = icon and icon.AbsolutePosition.Y}))
+                x = win.AbsolutePosition.X - o.X, y = win.AbsolutePosition.Y - o.Y, collapsed = collapsed,
+                hidden = not win.Visible, mini = fullSize ~= nil, ix = icon and icon.AbsolutePosition.X - o.X,
+                iy = icon and icon.AbsolutePosition.Y - o.Y}))
         end
         corner(win, 6)
         local title = mk("TextLabel", {Size = UDim2.new(1, 0, 0, 30), BackgroundColor3 = C.accent, BorderSizePixel = 0, TextColor3 = C.fg,
             Font = Enum.Font.GothamBold, TextSize = 15, TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
-            Text = name .. "   (Right Alt To Hide/Open. " .. tostring(VERSION) .. ")"}, win)  -- owner wording
+            Text = name .. "   (" .. keyLabel(vals["key_Hide menu"]) .. " To Hide/Open. " .. tostring(VERSION) .. ")"}, win)  -- owner wording; key as it was at start
         mk("UIPadding", {PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 70)}, title)
         local p0
         dragger(title, function() p0 = win.Position end, function(dx, dy) win.Position = p0 + UDim2.new(0, dx, 0, dy) end, saveLayout)
@@ -2903,7 +2908,7 @@ local function startApocHelper()
 -- Found in the game's ItemInteractClient / BackpackClient (dump\9098570654). AdjustBackpack with nil = UNSTORE (drops
 -- the bag's contents), so it is only ever called with an item. Log: C:\matcha\workspace\apoc_log.txt.
 -- Notes for Claude: D:\NPCHitBoxExpander\Documentation.md.
-local VERSION = "2026-11-27.18"  -- bump on every edit so the log shows which copy ran
+local VERSION = "2026-11-27.19"  -- bump on every edit so the log shows which copy ran
 local GAME_ID = 9098570654
 
 local Players     = game:GetService("Players")

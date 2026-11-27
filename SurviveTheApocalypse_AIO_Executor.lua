@@ -1,11 +1,11 @@
 local IS_APOC = game.GameId == 9098570654; local Players = game:GetService("Players")
 if not game:IsLoaded() then game.Loaded:Wait() end; while not Players.LocalPlayer do task.wait() end; local LocalPlayer = Players.LocalPlayer
 
--- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-27.19.
+-- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-27.20.
 -- Install: put this file in your executor's autoexec folder or run it in a match. Own menu window: Right Alt hides / shows it. V = Speed, N = Noclip.
 -- Runs only in Survive the Apocalypse. Settings go to the executor's workspace folder. Use at your own risk: it sends the game's own messages (pickup, crates) and the game has an anti-cheat. Vibecoded.
 local NO_LOGS = true  -- true = no log files and no console lines (public copy)
-local VERSION = "aio-2026-11-27.19"  -- bump on every edit so the log shows which copy ran
+local VERSION = "aio-2026-11-27.20"  -- bump on every edit so the log shows which copy ran
 local GAME_ID, LOG_FILE, APOC_DIR = "", "hbx_log.txt", "SurviveTheApocalypse"
 local logDirOk, logDirErr = pcall(function()
     local ok, id = pcall(function() return game.GameId end); if not ok or not id or id == 0 then id = game.PlaceId end
@@ -378,9 +378,16 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
             local look = flySeat.CFrame.LookVector
             look = Vector3.new(look.X, 0, look.Z).Unit
             local vel = look * (key(K.W) - key(K.S)) * flySpeed + Vector3.new(0, (key(kcOf(vals["key_Fly up"])) - key(kcOf(vals["key_Fly down"]))) * flySpeed / 2, 0)
-            local spin = Vector3.new(0, (key(K.A) - key(K.D)) * 2, 0) + flySeat.CFrame.UpVector:Cross(Vector3.yAxis) * 8
+            local spin = Vector3.new(0, (key(K.A) - key(K.D)) * 2, 0) + flySeat.CFrame.UpVector:Cross(Vector3.yAxis) * 4
+            -- Owner 2026-11-27 (wheels still flew off while flying): every piece moves as if the car were one solid
+            -- block: its speed = car speed + turn x its distance from the car's centre. The same speed for all pieces
+            -- pulled the side wheels against their joints whenever the car turned or levelled itself.
+            local c = flySeat.AssemblyCenterOfMass
             for _, r in ipairs(flyRoots) do
-                if r.Parent then r.AssemblyLinearVelocity, r.AssemblyAngularVelocity = vel, spin end
+                if r.Parent then
+                    r.AssemblyLinearVelocity = vel + spin:Cross(r.AssemblyCenterOfMass - c)
+                    r.AssemblyAngularVelocity = spin
+                end
             end
             if engine and engine.Value then engine.Value = false end
         elseif flyCar then
@@ -2908,7 +2915,7 @@ local function startApocHelper()
 -- Found in the game's ItemInteractClient / BackpackClient (dump\9098570654). AdjustBackpack with nil = UNSTORE (drops
 -- the bag's contents), so it is only ever called with an item. Log: C:\matcha\workspace\apoc_log.txt.
 -- Notes for Claude: D:\NPCHitBoxExpander\Documentation.md.
-local VERSION = "2026-11-27.19"  -- bump on every edit so the log shows which copy ran
+local VERSION = "2026-11-27.20"  -- bump on every edit so the log shows which copy ran
 local GAME_ID = 9098570654
 
 local Players     = game:GetService("Players")

@@ -1,11 +1,11 @@
 local IS_APOC = game.GameId == 9098570654; local Players = game:GetService("Players")
 if not game:IsLoaded() then game.Loaded:Wait() end; while not Players.LocalPlayer do task.wait() end; local LocalPlayer = Players.LocalPlayer
 
--- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-28.4.
+-- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-28.5.
 -- Install: put this file in your executor's autoexec folder or run it in a match. Own menu window: Right Alt hides / shows it. V = Speed, N = Noclip.
 -- Runs only in Survive the Apocalypse. Settings go to the executor's workspace folder. Use at your own risk: it sends the game's own messages (pickup, crates) and the game has an anti-cheat. Vibecoded.
 local NO_LOGS = true  -- true = no log files and no console lines (public copy)
-local VERSION = "aio-2026-11-28.4"  -- bump on every edit so the log shows which copy ran
+local VERSION = "aio-2026-11-28.5"  -- bump on every edit so the log shows which copy ran
 local GAME_ID, LOG_FILE, APOC_DIR = "", "hbx_log.txt", "SurviveTheApocalypse"
 local logDirOk, logDirErr = pcall(function()
     local ok, id = pcall(function() return game.GameId end); if not ok or not id or id == 0 then id = game.PlaceId end
@@ -2915,7 +2915,7 @@ local function startApocHelper()
 -- Found in the game's ItemInteractClient / BackpackClient (dump\9098570654). AdjustBackpack with nil = UNSTORE (drops
 -- the bag's contents), so it is only ever called with an item. Log: C:\matcha\workspace\apoc_log.txt.
 -- Notes for Claude: D:\NPCHitBoxExpander\Documentation.md.
-local VERSION = "2026-11-28.4"  -- bump on every edit so the log shows which copy ran
+local VERSION = "2026-11-28.5"  -- bump on every edit so the log shows which copy ran
 local GAME_ID = 9098570654
 
 local Players     = game:GetService("Players")
@@ -3021,6 +3021,7 @@ local cfg = {
 local SETTINGS_FILE = "SurviveTheApocalypse/pickup_settings.json"
 -- v-16d (owner: Auto Pickup is always off after a restart): "enabled" is not saved, so every start is ON. Logs
 -- game41/43: only "enabled" flipped to false mid-game (L key or the toggle), and that saved "off" carried over.
+local farmMinAt = -1e9  -- when "Leave after" last changed (owner 2026-11-28: a slider bump left the match at once)
 local SAVED_KEYS    = {"range", "pick", "extra", "fuel", "scrap", "batt", "battPack", "food", "armor", "weapon", "bagUp", "crates", "espOn", "esp", "espColor", "espDist", "badge",
     "joinMode", "partySize", "joinMin", "leaveAt", "hotkey", "mask", "fuelStopDay", "weaponBag", "mreBag2", "goodScrap", "espAmmo", "espVehicle", "crateMinTier", "antiAfk", "autoFarm", "farmOpt", "farmMode", "farmMin"}
 do
@@ -4902,7 +4903,10 @@ local function readMenu()
     v = UI.GetValue(id("farm"));        if type(v) == "boolean" then cfg.autoFarm = v end
     v = UI.GetValue(id("farmOpt"));     if type(v) == "boolean" then cfg.farmOpt = v end
     v = UI.GetValue(id("farmMode"));    if type(v) == "number" then cfg.farmMode = v end
-    v = UI.GetValue(id("farmMin"));     if type(v) == "number" then cfg.farmMin = v end
+    v = UI.GetValue(id("farmMin"));     if type(v) == "number" then
+        if v ~= cfg.farmMin then farmMinAt = os.clock() end
+        cfg.farmMin = v
+    end
     v = UI.GetValue(id("range"));       if type(v) == "number" then cfg.range = v end
     v = UI.GetValue(id("fuel"));        if type(v) == "boolean" then cfg.fuel = v end
     v = UI.GetValue(id("mask"));        if type(v) == "boolean" then cfg.mask = v end
@@ -6048,7 +6052,8 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
                     -- the first horde comes at 4:00.
                     or (surv and survMovedAt and surv >= 60 and os.clock() - survMovedAt > 6 and ("Survived clock stopped at " .. surv .. " s (horde)"))
                     or (horde >= 3 and (horde .. " horde zombies seen"))
-                    or (surv and surv >= (tonumber(cfg.farmMin) or 91) * 60 and ("Survived " .. math.floor(surv / 60) .. " min, leave after " .. tostring(cfg.farmMin)))
+                    -- 30 s grace after a "Leave after" change, so an accidental slider bump can be undone
+                    or (surv and surv >= (tonumber(cfg.farmMin) or 91) * 60 and os.clock() - farmMinAt >= 30 and ("Survived " .. math.floor(surv / 60) .. " min, leave after " .. tostring(cfg.farmMin)))
                 if why then
                     leaving = true
                     doing("leaving: " .. why)
@@ -6062,7 +6067,7 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
     -- Optimization (owner 2026-11-28): on the placed pad and AFK = 3D rendering off (black screen), FPS cap 5, ESP paused.
     -- Farm, Kill Aura and pickups are untouched. Mouse / WASD wakes it for 60 s. Each call is pcall'd: a missing
     -- function is skipped and logged once ("Optimization: ... ok=").
-    local optWake, optLogged, optText, optBlack = 0, false, nil, nil
+    local optWake, optLogged, optText, optBlack = os.clock() + 60, false, nil, nil  -- owner: not black right after re-executing
     local function optimize(want)
         local now = os.clock()
         if not isrbxactive or isrbxactive() then

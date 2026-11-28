@@ -1,11 +1,11 @@
 local IS_APOC = game.GameId == 9098570654; local Players = game:GetService("Players")
 if not game:IsLoaded() then game.Loaded:Wait() end; while not Players.LocalPlayer do task.wait() end; local LocalPlayer = Players.LocalPlayer
 
--- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-28.12.
+-- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-28.13.
 -- Install: put this file in your executor's autoexec folder or run it in a match. Own menu window: Right Alt hides / shows it. V = Speed, N = Noclip.
 -- Runs only in Survive the Apocalypse. Settings go to the executor's workspace folder. Use at your own risk: it sends the game's own messages (pickup, crates) and the game has an anti-cheat. Vibecoded.
 local NO_LOGS = true  -- true = no log files and no console lines (public copy)
-local VERSION = "aio-2026-11-28.12"  -- bump on every edit so the log shows which copy ran
+local VERSION = "aio-2026-11-28.13"  -- bump on every edit so the log shows which copy ran
 local GAME_ID, LOG_FILE, APOC_DIR = "", "hbx_log.txt", "SurviveTheApocalypse"
 local logDirOk, logDirErr = pcall(function()
     local ok, id = pcall(function() return game.GameId end); if not ok or not id or id == 0 then id = game.PlaceId end
@@ -2919,7 +2919,7 @@ local function startApocHelper()
 -- Found in the game's ItemInteractClient / BackpackClient (dump\9098570654). AdjustBackpack with nil = UNSTORE (drops
 -- the bag's contents), so it is only ever called with an item. Log: C:\matcha\workspace\apoc_log.txt.
 -- Notes for Claude: D:\NPCHitBoxExpander\Documentation.md.
-local VERSION = "2026-11-28.12"  -- bump on every edit so the log shows which copy ran
+local VERSION = "2026-11-28.13"  -- bump on every edit so the log shows which copy ran
 local GAME_ID = 9098570654
 
 local Players     = game:GetService("Players")
@@ -6058,8 +6058,8 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
                         and "nothing looted by Survived 0:30")
                     -- surv >= 60: at the match start the clock sits at 1-3 s for a while (game36/37 left by mistake);
                     -- the first horde comes at 4:00.
-                    -- 20 s, not 6 (owner 2026-11-28): server lag in busy hours froze the clock ~6 s and ended a 44-min run
-                    or (surv and survMovedAt and surv >= 60 and os.clock() - survMovedAt > 20 and ("Survived clock stopped at " .. surv .. " s (horde)"))
+                    -- 20 s, not 6, and only before Survived 10:00 (owner 2026-11-28): after that a stopped clock is server lag; stay to the target time
+                    or (surv and survMovedAt and surv >= 60 and surv < 600 and os.clock() - survMovedAt > 20 and ("Survived clock stopped at " .. surv .. " s (horde)"))
                     or (horde >= 3 and (horde .. " horde zombies seen"))
                     -- 30 s grace after a "Leave after" change, so an accidental slider bump can be undone
                     or (surv and surv >= (tonumber(cfg.farmMin) or 91) * 60 and os.clock() - farmMinAt >= 30 and ("Survived " .. math.floor(surv / 60) .. " min, leave after " .. tostring(cfg.farmMin)))

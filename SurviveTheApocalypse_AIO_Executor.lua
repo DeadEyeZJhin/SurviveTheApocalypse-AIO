@@ -1,11 +1,11 @@
 local IS_APOC = game.GameId == 9098570654; local Players = game:GetService("Players")
 if not game:IsLoaded() then game.Loaded:Wait() end; while not Players.LocalPlayer do task.wait() end; local LocalPlayer = Players.LocalPlayer
 
--- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-28.5.
+-- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-28.6.
 -- Install: put this file in your executor's autoexec folder or run it in a match. Own menu window: Right Alt hides / shows it. V = Speed, N = Noclip.
 -- Runs only in Survive the Apocalypse. Settings go to the executor's workspace folder. Use at your own risk: it sends the game's own messages (pickup, crates) and the game has an anti-cheat. Vibecoded.
 local NO_LOGS = true  -- true = no log files and no console lines (public copy)
-local VERSION = "aio-2026-11-28.5"  -- bump on every edit so the log shows which copy ran
+local VERSION = "aio-2026-11-28.6"  -- bump on every edit so the log shows which copy ran
 local GAME_ID, LOG_FILE, APOC_DIR = "", "hbx_log.txt", "SurviveTheApocalypse"
 local logDirOk, logDirErr = pcall(function()
     local ok, id = pcall(function() return game.GameId end); if not ok or not id or id == 0 then id = game.PlaceId end
@@ -740,6 +740,8 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
             PaddingBottom = UDim.new(0, 6)}, tip)
         local infoOf, tipFor = {}, nil
         on(RS.Heartbeat, function() if tipFor and not (win.Visible and tipFor.Visible) then tip.Visible, tipFor = false, nil end end)
+        -- Owner 2026-11-28: the menu hid under the AFK black screen but still took clicks (moved "Leave after"); hide it then.
+        on(RS.Heartbeat, function() local want = not _G.APOC_OPT_ON; if sg.Enabled ~= want then sg.Enabled = want end end)
         local function short(w, text)
             local info = {}
             text = tostring(text):gsub("%s*%b()", function(p) info[#info + 1] = p:sub(2, -2); return "" end)
@@ -2915,7 +2917,7 @@ local function startApocHelper()
 -- Found in the game's ItemInteractClient / BackpackClient (dump\9098570654). AdjustBackpack with nil = UNSTORE (drops
 -- the bag's contents), so it is only ever called with an item. Log: C:\matcha\workspace\apoc_log.txt.
 -- Notes for Claude: D:\NPCHitBoxExpander\Documentation.md.
-local VERSION = "2026-11-28.5"  -- bump on every edit so the log shows which copy ran
+local VERSION = "2026-11-28.6"  -- bump on every edit so the log shows which copy ran
 local GAME_ID = 9098570654
 
 local Players     = game:GetService("Players")

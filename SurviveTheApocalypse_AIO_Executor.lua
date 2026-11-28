@@ -1,11 +1,11 @@
 local IS_APOC = game.GameId == 9098570654; local Players = game:GetService("Players")
 if not game:IsLoaded() then game.Loaded:Wait() end; while not Players.LocalPlayer do task.wait() end; local LocalPlayer = Players.LocalPlayer
 
--- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-27.20.
+-- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-28.1.
 -- Install: put this file in your executor's autoexec folder or run it in a match. Own menu window: Right Alt hides / shows it. V = Speed, N = Noclip.
 -- Runs only in Survive the Apocalypse. Settings go to the executor's workspace folder. Use at your own risk: it sends the game's own messages (pickup, crates) and the game has an anti-cheat. Vibecoded.
 local NO_LOGS = true  -- true = no log files and no console lines (public copy)
-local VERSION = "aio-2026-11-27.20"  -- bump on every edit so the log shows which copy ran
+local VERSION = "aio-2026-11-28.1"  -- bump on every edit so the log shows which copy ran
 local GAME_ID, LOG_FILE, APOC_DIR = "", "hbx_log.txt", "SurviveTheApocalypse"
 local logDirOk, logDirErr = pcall(function()
     local ok, id = pcall(function() return game.GameId end); if not ok or not id or id == 0 then id = game.PlaceId end
@@ -2915,7 +2915,7 @@ local function startApocHelper()
 -- Found in the game's ItemInteractClient / BackpackClient (dump\9098570654). AdjustBackpack with nil = UNSTORE (drops
 -- the bag's contents), so it is only ever called with an item. Log: C:\matcha\workspace\apoc_log.txt.
 -- Notes for Claude: D:\NPCHitBoxExpander\Documentation.md.
-local VERSION = "2026-11-27.20"  -- bump on every edit so the log shows which copy ran
+local VERSION = "2026-11-28.1"  -- bump on every edit so the log shows which copy ran
 local GAME_ID = 9098570654
 
 local Players     = game:GetService("Players")
@@ -3340,7 +3340,9 @@ local function nearbyItems(kids, hrpPos, reach2, bagInHand, wearingMask)
             or (info.type == "Resource" and not isBatt and cfg.scrap) or weaponBag or mreBag)
         local food = info.type == "Food" and cfg.food and not mreBag and info.hunger or nil
         local upgrade = (info.type == "Armor" and cfg.armor and "armor")
-            or (info.toolType == "Melee" and cfg.weapon and not weaponBag and "melee")
+            -- 2026-11-28 (owner): a better melee / gun (or your first gun) goes to the inventory, the rest to the bag.
+            or (info.toolType == "Melee" and cfg.weapon and "melee")
+            or (info.toolType == "Gun" and cfg.weapon and "gun")
             or ((info.toolType == "Backpack" or string.find(n, "backpack", 1, true)) and cfg.bagUp and "backpack")
             or (info.type == "GasMask" and cfg.mask and not wearingMask and "mask")
             or (string.find(n, "wrench", 1, true) and cfg.pick.wrench and "wrench") or nil
@@ -4210,12 +4212,12 @@ local function pickupStep()
     -- old one is in your hand it waits and drops it as soon as you switch slot: Matcha has no EquipTool (docs), and
     -- pressing a hotbar key for you is the kind of input takeover the owner rejected.
     if swap then
-        local _, tierNow = bestTool(char, "Melee")
+        local _, tierNow = bestTool(char, swap.kind)
         local okP, par = pcall(function() return swap.old.Parent end)
         if tierNow > swap.oldTier and okP and par == char then
             if not swap.waitLogged then
                 swap.waitLogged = true
-                log("Old melee " .. swap.oldName .. " is in your hand: it drops as soon as you switch slot")
+                log("Old " .. swap.kind .. " " .. swap.oldName .. " is in your hand: it drops as soon as you switch slot")
             end
         elseif tierNow > swap.oldTier then
             local old, oldName = swap.old, swap.oldName
@@ -4225,10 +4227,10 @@ local function pickupStep()
                 local at = hrp.CFrame * CFrame.new(2, 0, -2)
                 task.spawn(function()
                     local okD, err = pcall(function() rf:InvokeServer(old, at) end)
-                    log(okD and ("Dropped old melee: " .. oldName) or ("Drop of old melee failed: " .. tostring(err)))
+                    log(okD and ("Dropped old " .. swap.kind .. ": " .. oldName) or ("Drop of old weapon failed: " .. tostring(err)))
                 end)
             else
-                log("Old melee kept (already gone, not droppable, or no DropTool remote): " .. oldName)
+                log("Old weapon kept (already gone, not droppable, or no DropTool remote): " .. oldName)
             end
         elseif now > swap.untilT then
             swap = nil  -- the better one was not taken (inventory full?): keep the old one
@@ -4239,7 +4241,7 @@ local function pickupStep()
     crumb("main", "pickup nearby items")
     local list = nearbyItems(kids, hrp.Position, reach * reach, bagInHand, attr(char, "WearingGasMask") == true)
     crumb("main", "pickup send")
-    local armorTier, meleeTool, meleeTier, bagTier, hasWrench  -- read once per tick, only when a candidate is in reach
+    local armorTier, meleeTool, meleeTier, gunTool, gunTier, bagTier, hasWrench  -- read once per tick, only when a candidate is in reach
     for _, e in ipairs(list) do
         if sent >= 6 then break end  -- v-14h (owner: loot faster): at most 6 items per tick
         local r, hunger
@@ -4278,15 +4280,26 @@ local function pickupStep()
                 r = remote("Interaction", "PickUpItem")
                 maskWait = now + 5
             end
-        elseif e.upgrade == "melee" then
+        elseif e.upgrade == "melee" or e.upgrade == "gun" then
+            local kind = e.upgrade == "gun" and "Gun" or "Melee"
             if not meleeTier then meleeTool, meleeTier = bestTool(char, "Melee") end
-            if not swap and e.tier > meleeTier then
+            if not gunTier then
+                gunTool, gunTier = bestTool(char, "Gun")
+                local okN, nm = pcall(function() return gunTool and gunTool.Name end)
+                if okN and nm == "Heavy Revolver" then gunTier = math.huge end  -- owner: the best gun, never replaced
+                if not gunTool then gunTier = -1 end  -- no gun yet: any gun is taken
+            end
+            local oldTool, oldTier = meleeTool, meleeTier
+            if kind == "Gun" then oldTool, oldTier = gunTool, gunTier end
+            if not swap and e.tier > oldTier then
                 r = remote("Interaction", "PickUpItem")
-                if meleeTool then
-                    local okN, nm = pcall(function() return meleeTool.Name end)
-                    swap = {old = meleeTool, oldName = okN and tostring(nm) or "?", oldTier = meleeTier, untilT = now + 3}
+                if oldTool then
+                    local okN, nm = pcall(function() return oldTool.Name end)
+                    swap = {kind = kind, old = oldTool, oldName = okN and tostring(nm) or "?", oldTier = oldTier, untilT = now + 3}
                 end
-                meleeTier = e.tier
+                if kind == "Gun" then gunTier = e.tier else meleeTier = e.tier end
+            elseif e.bag and bagInHand then
+                r = remote("Tools", "AdjustBackpack")  -- not better: stored like before
             end
         elseif e.food then
             local okH, h = pcall(function() return char:GetAttribute("Hunger") end)
@@ -4815,7 +4828,7 @@ local function drawMenu(tab)
         sec:Toggle(id("mreBag2"), "Store MREs (in Backpack, not eaten)", cfg.mreBag2)
         sec:Toggle(id("food"), "Auto eat (eat food when hungry)", cfg.food)
         sec:Toggle(id("armor"), "Better Armor only", cfg.armor)
-        sec:Toggle(id("weapon"), "Better Melee (drops old)", cfg.weapon)
+        sec:Toggle(id("weapon"), "Better Melee / Gun (drops old)", cfg.weapon)
         sec:Toggle(id("bagUp"), "Better Backpack", cfg.bagUp)
         sec:Toggle(id("crates"), "Open Crates in reach", cfg.crates)
         if page == nil then

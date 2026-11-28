@@ -1,11 +1,11 @@
 local IS_APOC = game.GameId == 9098570654; local Players = game:GetService("Players")
 if not game:IsLoaded() then game.Loaded:Wait() end; while not Players.LocalPlayer do task.wait() end; local LocalPlayer = Players.LocalPlayer
 
--- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-28.14.
+-- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-28.15.
 -- Install: put this file in your executor's autoexec folder or run it in a match. Own menu window: Right Alt hides / shows it. V = Speed, N = Noclip.
 -- Runs only in Survive the Apocalypse. Settings go to the executor's workspace folder. Use at your own risk: it sends the game's own messages (pickup, crates) and the game has an anti-cheat. Vibecoded.
 local NO_LOGS = true  -- true = no log files and no console lines (public copy)
-local VERSION = "aio-2026-11-28.14"  -- bump on every edit so the log shows which copy ran
+local VERSION = "aio-2026-11-28.15"  -- bump on every edit so the log shows which copy ran
 local GAME_ID, LOG_FILE, APOC_DIR = "", "hbx_log.txt", "SurviveTheApocalypse"
 local logDirOk, logDirErr = pcall(function()
     local ok, id = pcall(function() return game.GameId end); if not ok or not id or id == 0 then id = game.PlaceId end
@@ -2919,7 +2919,7 @@ local function startApocHelper()
 -- Found in the game's ItemInteractClient / BackpackClient (dump\9098570654). AdjustBackpack with nil = UNSTORE (drops
 -- the bag's contents), so it is only ever called with an item. Log: C:\matcha\workspace\apoc_log.txt.
 -- Notes for Claude: D:\NPCHitBoxExpander\Documentation.md.
-local VERSION = "2026-11-28.14"  -- bump on every edit so the log shows which copy ran
+local VERSION = "2026-11-28.15"  -- bump on every edit so the log shows which copy ran
 local GAME_ID = 9098570654
 
 local Players     = game:GetService("Players")
@@ -5443,7 +5443,7 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
                     local new = true
                     for _, s0 in ipairs(badSpots) do if flat(s0 - r.Position).Magnitude < 30 then new = false; break end end
                     if new then badSpots[#badSpots + 1] = r.Position end
-                elseif r.Position.Y > -40 then
+                elseif r.Position.Y > -40 and math.abs(r.AssemblyLinearVelocity.Y) < 5 then  -- standing, not mid-fall
                     lastSafe = r.Position
                 end
             end
@@ -5532,7 +5532,15 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
                 return false
             end
             if hrp.Position.Y < -40 or hrp.AssemblyLinearVelocity.Y < -80 then
-                log("Auto Farm: falling (y " .. fmt(hrp.Position.Y) .. ") at " .. where(hrp.Position) .. ", stopping the walk")
+                -- game168: fell through the floor (lag) and stayed under the map until the horde. Back to the last ground.
+                local back = lastSafe and lastSafe + Vector3.new(0, 4, 0)
+                local okT = back and pcall(function()
+                    hrp.AssemblyLinearVelocity = Vector3.zero
+                    hrp.CFrame = CFrame.new(back)
+                end)
+                log("Auto Farm: falling (y " .. fmt(hrp.Position.Y) .. ") at " .. where(hrp.Position) .. ", "
+                    .. (okT and ("teleported back to " .. where(back)) or "no safe spot known") .. ", stopping the walk")
+                if okT then task.wait(0.5) end
                 return false
             end
             gear(ch, hum)

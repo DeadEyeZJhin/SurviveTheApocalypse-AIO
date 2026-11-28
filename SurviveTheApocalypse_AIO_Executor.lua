@@ -1,11 +1,11 @@
 local IS_APOC = game.GameId == 9098570654; local Players = game:GetService("Players")
 if not game:IsLoaded() then game.Loaded:Wait() end; while not Players.LocalPlayer do task.wait() end; local LocalPlayer = Players.LocalPlayer
 
--- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-28.6.
+-- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-28.7.
 -- Install: put this file in your executor's autoexec folder or run it in a match. Own menu window: Right Alt hides / shows it. V = Speed, N = Noclip.
 -- Runs only in Survive the Apocalypse. Settings go to the executor's workspace folder. Use at your own risk: it sends the game's own messages (pickup, crates) and the game has an anti-cheat. Vibecoded.
 local NO_LOGS = true  -- true = no log files and no console lines (public copy)
-local VERSION = "aio-2026-11-28.6"  -- bump on every edit so the log shows which copy ran
+local VERSION = "aio-2026-11-28.7"  -- bump on every edit so the log shows which copy ran
 local GAME_ID, LOG_FILE, APOC_DIR = "", "hbx_log.txt", "SurviveTheApocalypse"
 local logDirOk, logDirErr = pcall(function()
     local ok, id = pcall(function() return game.GameId end); if not ok or not id or id == 0 then id = game.PlaceId end
@@ -740,8 +740,6 @@ if UI == nil or _G.EXEC_SHIM_STOP then pcall(function()
             PaddingBottom = UDim.new(0, 6)}, tip)
         local infoOf, tipFor = {}, nil
         on(RS.Heartbeat, function() if tipFor and not (win.Visible and tipFor.Visible) then tip.Visible, tipFor = false, nil end end)
-        -- Owner 2026-11-28: the menu hid under the AFK black screen but still took clicks (moved "Leave after"); hide it then.
-        on(RS.Heartbeat, function() local want = not _G.APOC_OPT_ON; if sg.Enabled ~= want then sg.Enabled = want end end)
         local function short(w, text)
             local info = {}
             text = tostring(text):gsub("%s*%b()", function(p) info[#info + 1] = p:sub(2, -2); return "" end)
@@ -2917,7 +2915,7 @@ local function startApocHelper()
 -- Found in the game's ItemInteractClient / BackpackClient (dump\9098570654). AdjustBackpack with nil = UNSTORE (drops
 -- the bag's contents), so it is only ever called with an item. Log: C:\matcha\workspace\apoc_log.txt.
 -- Notes for Claude: D:\NPCHitBoxExpander\Documentation.md.
-local VERSION = "2026-11-28.6"  -- bump on every edit so the log shows which copy ran
+local VERSION = "2026-11-28.7"  -- bump on every edit so the log shows which copy ran
 local GAME_ID = 9098570654
 
 local Players     = game:GetService("Players")
@@ -4719,6 +4717,7 @@ _G.APOC_RUN = RUN
 -- A run that stopped while Optimization was on leaves a black screen / low FPS: undo it here (owner 2026-11-28).
 pcall(function() RunService:Set3dRenderingEnabled(true) end)
 if _G.APOC_OPT_ON then pcall(setfpscap, tonumber(_G.APOC_OPT_ON.fps) or 60); _G.APOC_OPT_ON = nil end
+pcall(function() ((gethui and gethui()) or game:GetService("CoreGui")):FindFirstChild("ApocAfkBlack"):Destroy() end)
 local function id(name) return "apoc_" .. name .. "_" .. RUN end
 local menuErrorShown = false
 -- Item toggles drawn at least once: a toggle on a page never opened is not read (its value may not exist yet).
@@ -6070,7 +6069,18 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
     -- Farm, Kill Aura and pickups are untouched. Mouse / WASD wakes it for 60 s. Each call is pcall'd: a missing
     -- function is skipped and logged once ("Optimization: ... ok=").
     local optWake, optLogged, optText, optBlack = os.clock() + 60, false, nil, nil  -- owner: not black right after re-executing
-    local function optimize(want)
+    local optimize
+    -- Owner (stuck black): polling 5 times a second missed quick clicks; any key / click now wakes it at once.
+    pcall(function()
+        local conn
+        conn = game:GetService("UserInputService").InputBegan:Connect(function(i)
+            if _G.APOC_RUN ~= RUN then conn:Disconnect(); return end
+            if i.KeyCode == Enum.KeyCode.Space then return end  -- Anti AFK taps Space
+            optWake = os.clock() + 60
+            if _G.APOC_OPT_ON and optimize then pcall(optimize, false) end
+        end)
+    end)
+    optimize = function(want)
         local now = os.clock()
         if not isrbxactive or isrbxactive() then
             for i = 1, 6 do if iskeypressed(AFK_KEYS[i]) then optWake = now + 60; break end end  -- not Space (Anti AFK)
@@ -6081,26 +6091,40 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
             local ok3 = pcall(function() RunService:Set3dRenderingEnabled(false) end)
             local okF = pcall(setfpscap, 5)
             if not optLogged then optLogged = true; log("Optimization: on, 3D off ok=" .. tostring(ok3) .. " FPS cap ok=" .. tostring(okF)) end
-            pcall(function()  -- owner: 3D off shows a white screen; a full-screen black square covers it
+            -- Owner: 3D off shows a white screen, so it is covered black. Executor: a ScreenGui below the menu (menu stays
+            -- visible and clickable on top); Matcha (no Instance.new): a Drawing square.
+            local okG = pcall(function()
+                local sg = Instance.new("ScreenGui")
+                sg.Name, sg.IgnoreGuiInset, sg.DisplayOrder, sg.ResetOnSpawn = "ApocAfkBlack", true, -10, false
+                local fr = Instance.new("Frame")
+                fr.Size, fr.BackgroundColor3, fr.BorderSizePixel = UDim2.fromScale(1, 1), Color3.new(0, 0, 0), 0
+                local tl = Instance.new("TextLabel")
+                tl.Size, tl.BackgroundTransparency, tl.TextColor3, tl.TextSize = UDim2.fromScale(1, 1), 1, Color3.new(0.35, 0.35, 0.35), 18
+                tl.Text = "AFK Optimization on (click or press any key to wake)"
+                tl.Parent, fr.Parent = fr, sg
+                sg.Parent = (gethui and gethui()) or game:GetService("CoreGui")
+                optBlack = sg
+            end)
+            if not okG then pcall(function()
                 local vs = workspace.CurrentCamera.ViewportSize
                 optBlack = Drawing.new("Square")
                 optBlack.Filled, optBlack.Color, optBlack.ZIndex = true, Color3.new(0, 0, 0), 0
                 optBlack.Position, optBlack.Size, optBlack.Visible = Vector2.new(0, 0), vs + Vector2.new(0, 80), true
-            end)
-            pcall(function()
+            end) end
+            if not okG then pcall(function()
                 optText = Drawing.new("Text")
                 optText.Text, optText.Size, optText.Color, optText.Center = "AFK Optimization on (move or click to wake)", 18, Color3.new(0.35, 0.35, 0.35), true
                 optText.ZIndex = 1
                 local vs = workspace.CurrentCamera.ViewportSize
                 optText.Position, optText.Visible = Vector2.new(vs.X / 2, vs.Y / 2), true
-            end)
+            end) end
         elseif not want and _G.APOC_OPT_ON then
             local fps = tonumber(_G.APOC_OPT_ON.fps) or 60
             _G.APOC_OPT_ON = nil
             pcall(function() RunService:Set3dRenderingEnabled(true) end)
             pcall(setfpscap, fps)
             if optText then pcall(function() optText:Remove() end); optText = nil end
-            if optBlack then pcall(function() optBlack:Remove() end); optBlack = nil end
+            if optBlack then pcall(function() if typeof(optBlack) == "Instance" then optBlack:Destroy() else optBlack:Remove() end end); optBlack = nil end
         end
     end
     local padMissing, timerWaitAt, timerLogged = nil, nil, false

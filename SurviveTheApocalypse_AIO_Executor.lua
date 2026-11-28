@@ -1,11 +1,11 @@
 local IS_APOC = game.GameId == 9098570654; local Players = game:GetService("Players")
 if not game:IsLoaded() then game.Loaded:Wait() end; while not Players.LocalPlayer do task.wait() end; local LocalPlayer = Players.LocalPlayer
 
--- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-28.1.
+-- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-28.2.
 -- Install: put this file in your executor's autoexec folder or run it in a match. Own menu window: Right Alt hides / shows it. V = Speed, N = Noclip.
 -- Runs only in Survive the Apocalypse. Settings go to the executor's workspace folder. Use at your own risk: it sends the game's own messages (pickup, crates) and the game has an anti-cheat. Vibecoded.
 local NO_LOGS = true  -- true = no log files and no console lines (public copy)
-local VERSION = "aio-2026-11-28.1"  -- bump on every edit so the log shows which copy ran
+local VERSION = "aio-2026-11-28.2"  -- bump on every edit so the log shows which copy ran
 local GAME_ID, LOG_FILE, APOC_DIR = "", "hbx_log.txt", "SurviveTheApocalypse"
 local logDirOk, logDirErr = pcall(function()
     local ok, id = pcall(function() return game.GameId end); if not ok or not id or id == 0 then id = game.PlaceId end
@@ -2915,7 +2915,7 @@ local function startApocHelper()
 -- Found in the game's ItemInteractClient / BackpackClient (dump\9098570654). AdjustBackpack with nil = UNSTORE (drops
 -- the bag's contents), so it is only ever called with an item. Log: C:\matcha\workspace\apoc_log.txt.
 -- Notes for Claude: D:\NPCHitBoxExpander\Documentation.md.
-local VERSION = "2026-11-28.1"  -- bump on every edit so the log shows which copy ran
+local VERSION = "2026-11-28.2"  -- bump on every edit so the log shows which copy ran
 local GAME_ID = 9098570654
 
 local Players     = game:GetService("Players")
@@ -3290,6 +3290,8 @@ local function medOf(lowerName)
 end
 -- Workspace attribute CurrentDay (logged as "Event: CurrentDay=N").
 local function lateGame()
+    -- 2026-11-28 (owner): Endless Night has no day counter and no generator, so no fuel / Refined Fuel ESP there.
+    if attr(workspace, "EternalNight") == true then return true end
     if cfg.fuelStopDay <= 0 then return false end
     local ok, d = pcall(function() return workspace:GetAttribute("CurrentDay") end)
     return ok and tonumber(d) ~= nil and tonumber(d) >= cfg.fuelStopDay
@@ -4820,7 +4822,7 @@ local function drawMenu(tab)
         sec:Toggle(id("mask"), "Gas Mask (take one when not wearing one)", cfg.mask)
         sec:SliderInt(id("range"), "Range (12 = safe, higher = test)", 4, 30, cfg.range)
         sec:Toggle(id("fuel"), "Store Fuel (in Backpack)", cfg.fuel)
-        sec:SliderInt(id("fuelStopDay"), "Stop Fuel from day (store + ESP, 0 = never)", 0, 150, cfg.fuelStopDay)
+        sec:SliderInt(id("fuelStopDay"), "Stop Fuel from day (store + ESP, 0 = never; always off in Endless)", 0, 150, cfg.fuelStopDay)
         sec:Toggle(id("scrap"), "Store Scrap (and other resources, in Backpack)", cfg.scrap)
         sec:Toggle(id("batt"), "Store Batteries (in Backpack)", cfg.batt)
         sec:Toggle(id("battPack"), "Store Battery Packs (in Backpack)", cfg.battPack)

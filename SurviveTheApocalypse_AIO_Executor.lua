@@ -1,11 +1,11 @@
 local IS_APOC = game.GameId == 9098570654; local Players = game:GetService("Players")
 if not game:IsLoaded() then game.Loaded:Wait() end; while not Players.LocalPlayer do task.wait() end; local LocalPlayer = Players.LocalPlayer
 
--- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-28.3.
+-- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-28.4.
 -- Install: put this file in your executor's autoexec folder or run it in a match. Own menu window: Right Alt hides / shows it. V = Speed, N = Noclip.
 -- Runs only in Survive the Apocalypse. Settings go to the executor's workspace folder. Use at your own risk: it sends the game's own messages (pickup, crates) and the game has an anti-cheat. Vibecoded.
 local NO_LOGS = true  -- true = no log files and no console lines (public copy)
-local VERSION = "aio-2026-11-28.3"  -- bump on every edit so the log shows which copy ran
+local VERSION = "aio-2026-11-28.4"  -- bump on every edit so the log shows which copy ran
 local GAME_ID, LOG_FILE, APOC_DIR = "", "hbx_log.txt", "SurviveTheApocalypse"
 local logDirOk, logDirErr = pcall(function()
     local ok, id = pcall(function() return game.GameId end); if not ok or not id or id == 0 then id = game.PlaceId end
@@ -2915,7 +2915,7 @@ local function startApocHelper()
 -- Found in the game's ItemInteractClient / BackpackClient (dump\9098570654). AdjustBackpack with nil = UNSTORE (drops
 -- the bag's contents), so it is only ever called with an item. Log: C:\matcha\workspace\apoc_log.txt.
 -- Notes for Claude: D:\NPCHitBoxExpander\Documentation.md.
-local VERSION = "2026-11-28.3"  -- bump on every edit so the log shows which copy ran
+local VERSION = "2026-11-28.4"  -- bump on every edit so the log shows which copy ran
 local GAME_ID = 9098570654
 
 local Players     = game:GetService("Players")
@@ -6062,7 +6062,7 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
     -- Optimization (owner 2026-11-28): on the placed pad and AFK = 3D rendering off (black screen), FPS cap 5, ESP paused.
     -- Farm, Kill Aura and pickups are untouched. Mouse / WASD wakes it for 60 s. Each call is pcall'd: a missing
     -- function is skipped and logged once ("Optimization: ... ok=").
-    local optWake, optLogged, optText = 0, false, nil
+    local optWake, optLogged, optText, optBlack = 0, false, nil, nil
     local function optimize(want)
         local now = os.clock()
         if not isrbxactive or isrbxactive() then
@@ -6074,9 +6074,16 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
             local ok3 = pcall(function() RunService:Set3dRenderingEnabled(false) end)
             local okF = pcall(setfpscap, 5)
             if not optLogged then optLogged = true; log("Optimization: on, 3D off ok=" .. tostring(ok3) .. " FPS cap ok=" .. tostring(okF)) end
+            pcall(function()  -- owner: 3D off shows a white screen; a full-screen black square covers it
+                local vs = workspace.CurrentCamera.ViewportSize
+                optBlack = Drawing.new("Square")
+                optBlack.Filled, optBlack.Color, optBlack.ZIndex = true, Color3.new(0, 0, 0), 0
+                optBlack.Position, optBlack.Size, optBlack.Visible = Vector2.new(0, 0), vs + Vector2.new(0, 80), true
+            end)
             pcall(function()
                 optText = Drawing.new("Text")
-                optText.Text, optText.Size, optText.Color, optText.Center = "AFK Optimization on (move or click to wake)", 18, Color3.new(1, 1, 1), true
+                optText.Text, optText.Size, optText.Color, optText.Center = "AFK Optimization on (move or click to wake)", 18, Color3.new(0.35, 0.35, 0.35), true
+                optText.ZIndex = 1
                 local vs = workspace.CurrentCamera.ViewportSize
                 optText.Position, optText.Visible = Vector2.new(vs.X / 2, vs.Y / 2), true
             end)
@@ -6086,6 +6093,7 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
             pcall(function() RunService:Set3dRenderingEnabled(true) end)
             pcall(setfpscap, fps)
             if optText then pcall(function() optText:Remove() end); optText = nil end
+            if optBlack then pcall(function() optBlack:Remove() end); optBlack = nil end
         end
     end
     local padMissing, timerWaitAt, timerLogged = nil, nil, false

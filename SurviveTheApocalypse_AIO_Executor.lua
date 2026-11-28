@@ -1,11 +1,11 @@
 local IS_APOC = game.GameId == 9098570654; local Players = game:GetService("Players")
 if not game:IsLoaded() then game.Loaded:Wait() end; while not Players.LocalPlayer do task.wait() end; local LocalPlayer = Players.LocalPlayer
 
--- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-28.10.
+-- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-28.11.
 -- Install: put this file in your executor's autoexec folder or run it in a match. Own menu window: Right Alt hides / shows it. V = Speed, N = Noclip.
 -- Runs only in Survive the Apocalypse. Settings go to the executor's workspace folder. Use at your own risk: it sends the game's own messages (pickup, crates) and the game has an anti-cheat. Vibecoded.
 local NO_LOGS = true  -- true = no log files and no console lines (public copy)
-local VERSION = "aio-2026-11-28.10"  -- bump on every edit so the log shows which copy ran
+local VERSION = "aio-2026-11-28.11"  -- bump on every edit so the log shows which copy ran
 local GAME_ID, LOG_FILE, APOC_DIR = "", "hbx_log.txt", "SurviveTheApocalypse"
 local logDirOk, logDirErr = pcall(function()
     local ok, id = pcall(function() return game.GameId end); if not ok or not id or id == 0 then id = game.PlaceId end
@@ -2919,7 +2919,7 @@ local function startApocHelper()
 -- Found in the game's ItemInteractClient / BackpackClient (dump\9098570654). AdjustBackpack with nil = UNSTORE (drops
 -- the bag's contents), so it is only ever called with an item. Log: C:\matcha\workspace\apoc_log.txt.
 -- Notes for Claude: D:\NPCHitBoxExpander\Documentation.md.
-local VERSION = "2026-11-28.10"  -- bump on every edit so the log shows which copy ran
+local VERSION = "2026-11-28.11"  -- bump on every edit so the log shows which copy ran
 local GAME_ID = 9098570654
 
 local Players     = game:GetService("Players")
@@ -6928,7 +6928,7 @@ pcall(function()
         pf.frames, pf.aura = pf.frames + 1, (pf.aura or 0) + took
         if t0 - pf.t >= 10 then
             local fps = pf.frames / (t0 - pf.t)
-            if fps < 45 then
+            if fps < 45 and not _G.APOC_OPT_ON then  -- not while AFK Optimization caps FPS at 5 on purpose
                 log(string.format("Low FPS: %d fps over %d s; script ms per second: aura %d, hitbox %d, loot %d, esp %d;"
                     .. " zombies %s, expanded parts %d", fps, t0 - pf.t, (pf.aura or 0) * 100, (pf.hitbox or 0) * 100,
                     (pf.loot or 0) * 100, (pf.esp or 0) * 100, tostring(_G.HBX_NPC_COUNT or "?"), (function()

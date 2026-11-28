@@ -1,11 +1,11 @@
 local IS_APOC = game.GameId == 9098570654; local Players = game:GetService("Players")
 if not game:IsLoaded() then game.Loaded:Wait() end; while not Players.LocalPlayer do task.wait() end; local LocalPlayer = Players.LocalPlayer
 
--- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-28.8.
+-- Survive the Apocalypse All-in-One, other-executor version, by DeadEyeZJhin, coded with Claude (Anthropic). Build aio-2026-11-28.9.
 -- Install: put this file in your executor's autoexec folder or run it in a match. Own menu window: Right Alt hides / shows it. V = Speed, N = Noclip.
 -- Runs only in Survive the Apocalypse. Settings go to the executor's workspace folder. Use at your own risk: it sends the game's own messages (pickup, crates) and the game has an anti-cheat. Vibecoded.
 local NO_LOGS = true  -- true = no log files and no console lines (public copy)
-local VERSION = "aio-2026-11-28.8"  -- bump on every edit so the log shows which copy ran
+local VERSION = "aio-2026-11-28.9"  -- bump on every edit so the log shows which copy ran
 local GAME_ID, LOG_FILE, APOC_DIR = "", "hbx_log.txt", "SurviveTheApocalypse"
 local logDirOk, logDirErr = pcall(function()
     local ok, id = pcall(function() return game.GameId end); if not ok or not id or id == 0 then id = game.PlaceId end
@@ -2919,7 +2919,7 @@ local function startApocHelper()
 -- Found in the game's ItemInteractClient / BackpackClient (dump\9098570654). AdjustBackpack with nil = UNSTORE (drops
 -- the bag's contents), so it is only ever called with an item. Log: C:\matcha\workspace\apoc_log.txt.
 -- Notes for Claude: D:\NPCHitBoxExpander\Documentation.md.
-local VERSION = "2026-11-28.8"  -- bump on every edit so the log shows which copy ran
+local VERSION = "2026-11-28.9"  -- bump on every edit so the log shows which copy ran
 local GAME_ID = 9098570654
 
 local Players     = game:GetService("Players")
@@ -4782,7 +4782,7 @@ local function drawMenu(tab)
             local fs = tab:Section("Auto Farm", "Right")
             fs:Toggle(id("farm"), "Auto Farm (Endless solo: loot until a Healing Pad crafts, place it at the map edge,"
                 .. " stay, back to lobby on a horde or the time below, repeat)", cfg.autoFarm)
-            fs:Toggle(id("farmOpt"), "Optimization (AFK on the pad: black screen, 5 FPS, less CPU / GPU; any key or click wakes it for 60 s)", cfg.farmOpt)
+            fs:Toggle(id("farmOpt"), "Optimization (AFK on the pad: black screen, 5 FPS, less CPU / GPU; any key or click wakes it for 30 s)", cfg.farmOpt)
             fs:Combo(id("farmMode"), "Game mode (normal map: coming later)", {"Endless"}, cfg.farmMode)
             fs:SliderInt(id("farmMin"), "Leave after (minutes of Survived)", 5, 180, cfg.farmMin)
             -- Owner: show the game's own Survived clock (player EternalNightSurvived) so it can be checked against the
@@ -6070,9 +6070,9 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
     end)
     local placedAt, padPos, lastCraft, craftAt, lastState, scanned, fails, statusAt = nil, nil, nil, 0, nil, false, 0, 0
     -- Optimization (owner 2026-11-28): on the placed pad and AFK = 3D rendering off (black screen), FPS cap 5, ESP paused.
-    -- Farm, Kill Aura and pickups are untouched. Mouse / WASD wakes it for 60 s. Each call is pcall'd: a missing
+    -- Farm, Kill Aura and pickups are untouched. Mouse / WASD wakes it for 30 s. Each call is pcall'd: a missing
     -- function is skipped and logged once ("Optimization: ... ok=").
-    local optWake, optLogged, optText, optBlack = os.clock() + 60, false, nil, nil  -- owner: not black right after re-executing
+    local optWake, optLogged, optText, optBlack = os.clock() + 30, false, nil, nil  -- owner: not black right after re-executing
     local optimize
     -- Owner (stuck black): polling 5 times a second missed quick clicks; any key / click now wakes it at once.
     pcall(function()
@@ -6080,14 +6080,14 @@ if EXEC_COPY and not LOBBY then task.spawn(function()
         conn = game:GetService("UserInputService").InputBegan:Connect(function(i)
             if _G.APOC_RUN ~= RUN then conn:Disconnect(); return end
             if i.KeyCode == Enum.KeyCode.Space then return end  -- Anti AFK taps Space
-            optWake = os.clock() + 60
+            optWake = os.clock() + 30
             if _G.APOC_OPT_ON and optimize then pcall(optimize, false) end
         end)
     end)
     optimize = function(want)
         local now = os.clock()
         if not isrbxactive or isrbxactive() then
-            for i = 1, 6 do if iskeypressed(AFK_KEYS[i]) then optWake = now + 60; break end end  -- not Space (Anti AFK)
+            for i = 1, 6 do if iskeypressed(AFK_KEYS[i]) then optWake = now + 30; break end end  -- not Space (Anti AFK)
         end
         want = want and now >= optWake and _G.APOC_RUN == RUN
         if want and not _G.APOC_OPT_ON then
